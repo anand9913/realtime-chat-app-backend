@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Profile - Chat App</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+</head>
+<body>
+
+    <div class="profile-page-container">
+        <header class="profile-header">
+            <a href="chat.html" class="back-button" title="Back to Chat"><i class="fas fa-arrow-left"></i></a>
+            <h2>Edit Profile</h2>
+        </header>
+
+        <form id="profile-form" class="profile-form">
+            <div class="profile-pic-section">
+                <label>Profile Photo Preview:</label>
+                <img id="profile-pic-preview" src="https://via.placeholder.com/150?text=?" alt="Profile Preview" class="profile-pic-large">
+                <p id="profile-pic-error" class="error-message hidden">Could not load image from URL.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="profile-pic-url">Profile Photo URL:</label>
+                <input type="url" id="profile-pic-url" name="profilePicUrl" placeholder="https://example.com/your-image.png">
+            </div>
+
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" placeholder="Enter your username" required maxlength="50">
+            </div>
+
+            <button type="submit" id="save-profile-button">Save Profile</button>
+            <p id="save-confirmation" class="save-confirmation hidden">Profile saved successfully!</p>
+
+        </form>
+    </div>
+
+    <script src="profile.js"></script>
+</body>
+</html>

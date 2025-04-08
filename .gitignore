@@ -137,3 +137,77 @@ dist
 
 # Ignore Node dependencies folder
 node_modules/
+
+# .gitignore
+
+# Dependencies
+node_modules/
+/node_modules
+
+# Environment variables - IMPORTANT: Never commit secrets!
+.env
+.env.*
+*.env
+!.env.example # Allow example env files if you create one
+
+# Firebase Service Account Key file (if saved separately by accident)
+# Even though we use .env, ignore the raw key file as a precaution.
+serviceAccountKey.json
+*.pem
+*.json # Be careful if you need OTHER json files in git. Maybe make this more specific like *-firebase-key.json if needed.
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+*.log.[0-9] # Rotate logs
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Diagnostic reports (Node.js)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Build output directories (Common for frontend frameworks/bundlers)
+dist/
+build/
+out/
+public/build/ # Example if using SvelteKit or similar
+
+# Optional editor directories & files
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Optional OS generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Package manager lock files (if you choose not to commit package-lock.json, though usually recommended to commit)
+# package-lock.json # Uncomment if you DON'T want to commit lock file
+# yarn.lock # Uncomment if using Yarn and DON'T want to commit lock file
+
+# Other potentially sensitive files
+*.swo # Vim swap file
+*.swp # Vim swap file
+
+# Test coverage
+coverage/
+lcov.info
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Chat App</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    </head>
+<body class="bg-white"> <div id="auth-container" class="auth-container">
+        <h2>Welcome to ChatApp</h2>
+        <p>Enter your phone number to start</p>
+        <div id="phone-input-section">
+            <input type="tel" id="phone-number" placeholder="+91 12345 67890"> <div id="recaptcha-container" style="margin-top: 15px;"></div>
+            <button id="send-otp-button">Send OTP</button>
+        </div>
+        <div id="otp-input-section" class="hidden">
+            <p>Enter the OTP sent to <span id="phone-display"></span></p>
+            <input type="number" id="otp-code" placeholder="Enter OTP" inputmode="numeric" pattern="\d*"> <button id="verify-otp-button">Verify & Login</button>
+            <button id="resend-otp-button" disabled>Resend OTP (60)</button>
+            <button id="change-number-button">Change Number</button>
+        </div>
+        <p id="auth-error" class="error-message hidden"></p>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script src="login.js"></script>
+</body>
+</html>
