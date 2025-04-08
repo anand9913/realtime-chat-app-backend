@@ -131,3 +131,9 @@ dist
 
 # Replit debugger
 .breakpoints
+
+# Ignore environment variables file
+.env
+
+# Ignore Node dependencies folder
+node_modules/
