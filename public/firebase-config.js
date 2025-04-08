@@ -7,7 +7,7 @@ const firebaseConfig = {
     apiKey: "AIzaSyCg0pvN7Z58ztMNS-fWykoPsCEK1yNPFNA", // From your snippet
     authDomain: "chat-7201f.firebaseapp.com",         // From your snippet
     projectId: "chat-7201f",                         // From your snippet
-    storageBucket: "chat-7201f.appspot.com",         // Adjusted - ensure this is correct in your Firebase Console
+    storageBucket: "chat-7201f.firebasestorage.app",         // Adjusted - ensure this is correct in your Firebase Console
     messagingSenderId: "131817747153",               // From your snippet
     appId: "1:131817747153:web:c969ddec01a67f790c0bf0", // From your snippet
     measurementId: "G-SM18DKMMR1"                    // From your snippet (Optional for Analytics)
