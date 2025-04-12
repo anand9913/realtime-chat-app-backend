@@ -1,49 +1,70 @@
-// db.js
+// db.js - Updated with Connection Test
 const { Pool } = require('pg');
-require('dotenv').config(); // Ensures .env is loaded for local dev if needed
+require('dotenv').config(); // For local dev
 
-// Render automatically sets DATABASE_URL in the production environment
-// For local development, you might need to set it in your .env file
-// using the EXTERNAL connection string from Render.
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
     console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     console.error("!!! DATABASE_URL environment variable not set. !!!");
-    console.error("!!! Make sure your Render database is provisioned  !!!");
-    console.error("!!! and the variable is available in your env.   !!!");
-    console.error("!!! For local dev, set it in .env using EXTERNAL URL. !!!");
+    console.error("!!! Check Render Environment Variables.         !!!");
+    console.error("!!! For local dev, set it in .env (EXTERNAL URL). !!!");
     console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    // Exit if DB connection is critical for server startup
     process.exit(1);
 }
 
 const pool = new Pool({
     connectionString: connectionString,
-    // Render's free tier PostgreSQL requires SSL
-    // The 'pg' library usually enables SSL automatically if connection string starts with postgres://... and has ssl=true or no ssl param
-    // Render's internal URL might handle this, but explicitly enabling might be safer for external connections or if issues arise.
-    // Check Render docs for specifics on current SSL requirements for Node pg.
-    // For many cloud providers including Render/Heroku, this might be needed:
-     ssl: {
-        rejectUnauthorized: false
-     }
-});
-
-pool.on('connect', () => {
-    console.log('Successfully connected to PostgreSQL database!');
+    // Ensure SSL is configured correctly for Render's free tier Postgres
+    ssl: {
+        rejectUnauthorized: false // Often required for cloud DBs like Render/Heroku
+    }
 });
 
 pool.on('error', (err) => {
-    console.error('Unexpected error on idle PostgreSQL client', err);
-    process.exit(-1); // Exit process on critical pool error
+    // Pool-level errors
+    console.error('!!! Unexpected error on idle PostgreSQL client !!!', err);
+    process.exit(-1);
 });
 
 console.log("PostgreSQL Pool configured.");
 
-// Export a query function to easily run queries
+// --- Add Eager Connection Test ---
+async function testDbConnection() {
+    let client = null; // Define client outside try/finally
+    try {
+        console.log("Attempting to connect to database to test connection...");
+        client = await pool.connect(); // Get a client from the pool
+        console.log(">>> Database test connection successful! Client acquired. <<<");
+
+        // Optional: Run a simple query to be absolutely sure
+        const res = await client.query('SELECT NOW()');
+        console.log(">>> Test query successful. DB Current Time:", res.rows[0].now);
+
+    } catch (err) {
+        console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        console.error("!!! DATABASE CONNECTION FAILED ON TEST !!!", err.message);
+        console.error("!!! Check DATABASE_URL, SSL settings, Network Rules, DB status. !!!");
+        console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        // Don't necessarily exit here, maybe server can run without DB initially?
+        // process.exit(1);
+    } finally {
+        // IMPORTANT: Release the client back to the pool ALWAYS
+        if (client) {
+            client.release();
+            console.log("Test connection client released.");
+        }
+    }
+}
+// --- End Connection Test ---
+
+
+// Export a query function and potentially the pool
 module.exports = {
     query: (text, params) => pool.query(text, params),
-    // You might export the pool itself if you need transactions
-    // pool: pool
+    // pool: pool // Uncomment if direct pool access is needed
 };
+
+// --- Call the test function immediately after exporting ---
+testDbConnection();
+// ----------------------------------------------------------
