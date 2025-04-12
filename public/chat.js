@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
              // reconnectionAttempts: 5,
              // reconnectionDelay: 1000,
         });
-        //window.socketInstance = socket; // HACK: Expose socket globally for profile.js
+        window.socketInstance = socket; // HACK: Expose socket globally for profile.js
 
         socket.on('connect', () => {
             console.log('Socket connected:', socket.id);
