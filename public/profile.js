@@ -1,4 +1,4 @@
-// public/profile.js - Updated to Emit Socket Event
+// public/profile.js - Establishes own Socket connection
 document.addEventListener('DOMContentLoaded', () => {
     // --- DOM Elements ---
     const profileForm = document.getElementById('profile-form');
@@ -8,65 +8,119 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveButton = document.getElementById('save-profile-button');
     const saveConfirmation = document.getElementById('save-confirmation');
     const profilePicError = document.getElementById('profile-pic-error');
+    const connectionStatus = document.getElementById('connection-status'); // Get status element
 
     const defaultProfilePic = 'https://via.placeholder.com/150?text=?';
 
-    // --- Access Socket Instance (HACK - Needs Proper State Management) ---
-    // This assumes chat.js has exposed the socket instance globally
-    const socket = window.socketInstance;
-    if (!socket) {
-         console.error("Socket instance not found on profile page. Profile saving disabled.");
-         // Disable save button maybe?
-         // saveButton.disabled = true;
-         // saveButton.title = "Cannot connect to server";
-         // Or redirect? alert("Connection error. Please go back to chat.");
-    } else {
-         console.log("Socket instance found on profile page:", socket.id);
-          // --- Listen for Server Responses to Profile Update ---
-          // Listen *once* per save attempt might be safer, or manage listeners carefully
-          socket.on('profileUpdateSuccess', handleUpdateSuccess);
-          socket.on('profileUpdateError', handleUpdateError);
-          // Clean up listeners when page unloads?
-          // window.addEventListener('beforeunload', () => {
-          //    socket?.off('profileUpdateSuccess', handleUpdateSuccess);
-          //    socket?.off('profileUpdateError', handleUpdateError);
-          // });
+    // --- State ---
+    let socket = null; // Socket instance for THIS page
+    let isAuthenticated = false; // Track if this page's socket is authenticated
+
+    // --- Show Connection/Auth Status ---
+    function showStatus(message, isError = false) {
+        if (connectionStatus) {
+             connectionStatus.textContent = message;
+             connectionStatus.style.color = isError ? 'var(--error-color)' : 'var(--text-secondary)';
+             connectionStatus.classList.remove('hidden');
+        }
+        saveButton.disabled = !isAuthenticated; // Disable save if not authenticated
+    }
+    function hideStatus() {
+        if (connectionStatus) connectionStatus.classList.add('hidden');
+         saveButton.disabled = !isAuthenticated; // Re-evaluate save button state
+    }
+
+    // --- Connect and Authenticate Socket ---
+    function connectAndAuthenticate() {
+        const idToken = localStorage.getItem('firebaseIdToken');
+        if (!idToken) {
+            console.error("No Firebase ID Token found. Cannot authenticate profile page connection.");
+            showStatus("Authentication error. Please go back and log in again.", true);
+            // Maybe redirect? window.location.href = 'login.html';
+            return;
+        }
+
+        showStatus("Connecting to server...");
+
+        // Establish new connection for this page
+        socket = io();
+
+        socket.on('connect', () => {
+            console.log('Profile page socket connected:', socket.id);
+            showStatus("Authenticating...");
+            // Authenticate this new connection
+            socket.emit('authenticate', idToken);
+        });
+
+        socket.on('authenticationSuccess', (userData) => {
+            console.log("Profile page socket authenticated successfully:", userData);
+            isAuthenticated = true;
+            hideStatus(); // Hide status message, enable save button
+             // Optionally update form fields if backend sends fresh data
+             // usernameInput.value = userData.username || '';
+             // profilePicUrlInput.value = userData.profilePicUrl || '';
+             // updatePreview();
+        });
+
+        socket.on('authenticationFailed', (error) => {
+            console.error("Profile page socket authentication failed:", error?.message);
+            isAuthenticated = false;
+            showStatus(`Authentication failed: ${error?.message || 'Unknown error'}. Please login again.`, true);
+            socket?.disconnect(); // Disconnect on failure
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.warn("Profile page socket disconnected:", reason);
+            isAuthenticated = false;
+            showStatus("Disconnected from server. Cannot save.", true);
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error(`Profile page socket connection error: ${err.message}`);
+            isAuthenticated = false;
+            showStatus("Connection error. Cannot save.", true);
+        });
+
+         // Listen for profile update results specific to THIS socket connection
+         socket.on('profileUpdateSuccess', handleUpdateSuccess);
+         socket.on('profileUpdateError', handleUpdateError);
     }
 
 
     // --- Load existing profile data (from localStorage as initial state) ---
     function loadProfileData() {
-        const savedUsername = localStorage.getItem('chatUsername'); // Use the cache
+        const savedUsername = localStorage.getItem('chatUsername');
         const savedPicUrl = localStorage.getItem('chatProfilePicUrl');
         if (savedUsername) usernameInput.value = savedUsername;
         if (savedPicUrl) profilePicUrlInput.value = savedPicUrl;
         profilePicPreview.src = savedPicUrl || defaultProfilePic;
-         profilePicError.classList.add('hidden'); // Hide error on load
+         profilePicError.classList.add('hidden');
     }
 
     // --- Update image preview on URL input ---
     function updatePreview() {
         const newUrl = profilePicUrlInput.value.trim();
-        profilePicError.classList.add('hidden'); // Hide error initially
+        profilePicError.classList.add('hidden');
         if (newUrl) {
-            profilePicPreview.src = newUrl; // Attempt to load
+            profilePicPreview.src = newUrl;
         } else {
-            profilePicPreview.src = defaultProfilePic; // Revert to default if empty
+            profilePicPreview.src = defaultProfilePic;
         }
     }
 
     // --- Handle image loading errors ---
     profilePicPreview.onerror = function() {
         console.warn("Failed to load image from URL:", profilePicUrlInput.value);
-        profilePicError.classList.remove('hidden'); // Show error message
-        profilePicPreview.src = defaultProfilePic; // Revert to default image
+        profilePicError.classList.remove('hidden');
+        profilePicPreview.src = defaultProfilePic;
     };
 
-    // --- Save profile data (Send to Backend) ---
+    // --- Save profile data (Send to Backend via this page's socket) ---
     function saveProfile(event) {
         event.preventDefault();
-        if (!socket || !socket.connected) { // Check if socket exists and is connected
-             alert("Not connected to server. Cannot save profile.");
+        // Check if socket exists for this page and is connected & authenticated
+        if (!socket || !socket.connected || !isAuthenticated) {
+             showStatus("Not connected or authenticated. Cannot save.", true);
              return;
         }
 
@@ -78,65 +132,59 @@ document.addEventListener('DOMContentLoaded', () => {
             usernameInput.focus();
             return;
         }
-         // Optional: Basic URL validation on client side
-         // try { if(newPicUrl) new URL(newPicUrl); } catch { alert("Invalid Profile Picture URL format."); return; }
 
-
-        console.log("Emitting 'updateProfile' to server:", { username: newUsername, profilePicUrl: newPicUrl });
+        console.log("Emitting 'updateProfile' via profile page socket:", { username: newUsername, profilePicUrl: newPicUrl });
         showLoading(saveButton, "Saving...");
-        saveConfirmation.classList.add('hidden'); // Hide previous message
+        saveConfirmation.classList.add('hidden');
+        hideStatus(); // Hide connection status while saving
 
-        // Emit the event to the server
+        // Emit the event using the locally established socket
         socket.emit('updateProfile', {
             username: newUsername,
             profilePicUrl: newPicUrl
         });
 
-         // Remove previous listeners before adding new ones (safer)
-         socket.off('profileUpdateSuccess', handleUpdateSuccess);
-         socket.off('profileUpdateError', handleUpdateError);
-         // Add listeners for the response to *this specific* save attempt
-         socket.once('profileUpdateSuccess', handleUpdateSuccess);
-         socket.once('profileUpdateError', handleUpdateError);
-
-         // Optional: Add a timeout in case server doesn't respond
-         setTimeout(() => {
-             // If still in loading state after, e.g., 10 seconds
+         // Optional timeout for server response
+         const timeoutId = setTimeout(() => {
              if (saveButton.disabled && saveButton.textContent === 'Saving...') {
-                 handleUpdateError({ message: "Request timed out. Please try again."});
+                 handleUpdateError({ message: "Request timed out. Server might be busy."});
              }
          }, 10000); // 10 second timeout
+
+         // Clear timeout if response received
+         socket.once('profileUpdateSuccess', () => clearTimeout(timeoutId));
+         socket.once('profileUpdateError', () => clearTimeout(timeoutId));
     }
 
-    // Handlers for server response (called by socket listeners)
+    // --- Handlers for server response ---
     function handleUpdateSuccess(updatedData) {
         console.log("Profile update confirmed by server:", updatedData);
         hideLoading(saveButton, "Save Profile");
         saveConfirmation.textContent = "Profile saved successfully!";
+        saveConfirmation.style.color = 'var(--success-color)';
         saveConfirmation.classList.remove('hidden');
-        profilePicError.classList.add('hidden'); // Hide error on success
+        profilePicError.classList.add('hidden');
 
         // Update localStorage cache AFTER successful save
         localStorage.setItem('chatUsername', updatedData.username || '');
         localStorage.setItem('chatProfilePicUrl', updatedData.profilePicUrl || '');
 
-        // Optionally update preview src again from confirmed data
+        // Update preview/form with confirmed data
+        usernameInput.value = updatedData.username || '';
+        profilePicUrlInput.value = updatedData.profilePicUrl || '';
         profilePicPreview.src = updatedData.profilePicUrl || defaultProfilePic;
 
 
         setTimeout(() => saveConfirmation.classList.add('hidden'), 3000);
-         // Maybe navigate back automatically?
-         // setTimeout(() => { window.location.href = 'chat.html'; }, 1000);
     }
 
     function handleUpdateError(error) {
         console.error("Server reported profile update error:", error);
         hideLoading(saveButton, "Save Profile");
-        // Display error message near save button or use alert
-        showProfileError(`Error saving profile: ${error.message || 'Unknown server error'}`);
+        showStatus(`Error saving: ${error.message || 'Unknown server error'}`, true); // Show error in status area
     }
 
-     // --- UI Helper Functions (Specific to Profile Page) ---
+    // --- UI Helper Functions ---
      function showLoading(buttonElement, loadingText) {
         buttonElement.disabled = true;
         if (!buttonElement.dataset.originalText) {
@@ -145,25 +193,28 @@ document.addEventListener('DOMContentLoaded', () => {
         buttonElement.textContent = loadingText;
     }
     function hideLoading(buttonElement, defaultText) {
-        buttonElement.disabled = false;
+        // Only re-enable if authenticated
+        buttonElement.disabled = !isAuthenticated;
         buttonElement.textContent = buttonElement.dataset.originalText || defaultText;
     }
-     function showProfileError(message) { // Could display near button
-         saveConfirmation.textContent = message;
-         saveConfirmation.style.color = 'var(--error-color)'; // Use error color
-         saveConfirmation.classList.remove('hidden');
-          // Hide error after some time
-          setTimeout(() => {
-             saveConfirmation.classList.add('hidden');
-             saveConfirmation.style.color = 'var(--success-color)'; // Reset color
-          }, 5000);
-     }
-
 
     // --- Event Listeners ---
     profilePicUrlInput.addEventListener('input', updatePreview);
     profileForm.addEventListener('submit', saveProfile);
 
     // --- Initial Load ---
-    loadProfileData(); // Load from cache initially
-});
+    loadProfileData(); // Load cached data into form
+    connectAndAuthenticate(); // Establish connection and authenticate this page
+
+    // Clean up socket connection when user navigates away
+    window.addEventListener('beforeunload', () => {
+        if (socket) {
+             console.log("Disconnecting profile page socket on unload.");
+              // Remove specific listeners to avoid memory leaks if socket persists somehow
+              socket.off('profileUpdateSuccess', handleUpdateSuccess);
+              socket.off('profileUpdateError', handleUpdateError);
+              socket.disconnect();
+        }
+    });
+
+}); // End of DOMContentLoaded listener
