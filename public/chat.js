@@ -1,20 +1,19 @@
-// public/chat.js - Updated to remove localStorage for profile data
+// public/chat.js - Full Version with Debug Logging & No localStorage for Profile
 
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Authentication Check (Kept) ---
+    // --- Authentication Check (Uses localStorage for token/flag only) ---
     const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-    const storedToken = localStorage.getItem('firebaseIdToken');
+    const storedToken = localStorage.getItem('firebaseIdToken'); // Needed to auth socket
     if (!isAuthenticated || !storedToken) {
-        // If not authenticated OR token is missing, redirect to login
         console.warn("User not authenticated or token missing. Redirecting to login.");
-        localStorage.clear(); // Clear any potentially inconsistent state
+        localStorage.clear(); // Clear everything on auth failure
         window.location.href = 'login.html';
         return; // Stop execution
     }
 
     // --- Define Defaults ---
-    const defaultPic = 'https://via.placeholder.com/40?text=Me'; // Default profile pic
-    // Use phone number from login if available in localStorage, else a generic default
+    const defaultPic = 'https://via.placeholder.com/40?text=Me'; // Default sidebar pic
+    // Use phone number from login as default name, or a generic fallback
     const defaultUsername = localStorage.getItem('userPhoneNumber') || 'My Username';
 
     // --- DOM Elements ---
@@ -28,35 +27,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const logoutButton = document.getElementById('logout-button');
     const currentUsernameSpan = document.getElementById('current-user-name');
     const sidebarProfilePic = document.getElementById('sidebar-profile-pic');
-    // Add references for mobile view if needed
-    const sidebarElement = document.querySelector('.sidebar');
-    const chatAreaElement = document.querySelector('.chat-area');
-
 
     // --- Update UI with Defaults Initially ---
+    // Set placeholders until backend confirms authenticated profile
     console.log("[Initial Load] Setting UI to defaults.");
-    currentUsernameSpan.textContent = defaultUsername; // Show phone/default initially
-    sidebarProfilePic.src = defaultPic;                // Show default pic initially
-    sidebarProfilePic.onerror = () => { sidebarProfilePic.src = defaultPic; }; // Fallback for image load error
+    if (currentUsernameSpan) currentUsernameSpan.textContent = defaultUsername;
+    if (sidebarProfilePic) sidebarProfilePic.src = defaultPic;
+    if (sidebarProfilePic) sidebarProfilePic.onerror = () => { sidebarProfilePic.src = defaultPic; };
 
 
     // --- State ---
     let currentChatId = null;
     let currentUser = { // Reset profile fields, wait for server data
-        id: null,              // Will be set by server upon auth success
-        name: defaultUsername, // Start with default, updated by server
-        profilePic: defaultPic   // Start with default, updated by server
+        id: null, // Will be set by backend
+        name: defaultUsername, // Start with default
+        profilePic: defaultPic // Start with default
     };
-    let socket = null; // Define socket variable
-    let isChatAreaVisibleMobile = false; // Track mobile view state
-
+    let socket = null; // Socket instance for this page
+    let isSocketAuthenticated = false; // Track socket auth state
 
     // --- Socket.IO Connection ---
     function connectWebSocket() {
         console.log("Attempting to connect WebSocket...");
-        // Connect to the server that served the page
+        // Ensure no global socket instance is relied upon
+        if (socket && socket.connected) {
+            console.log("WebSocket already connected.");
+            return;
+        }
+
         socket = io({
-            // Optional: Add reconnection attempts etc. if needed
+            // Optional: Add reconnection attempts etc.
             // reconnectionAttempts: 5,
         });
 
@@ -67,112 +67,119 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log("Attempting to authenticate socket with backend...");
                 socket.emit('authenticate', idToken);
             } else {
-                // This should ideally not happen if initial check passed, but handle defensively
-                console.error("Firebase ID token missing on connect despite initial check. Logging out.");
-                logout();
+                console.error("Firebase ID token missing on connect event. Logging out.");
+                logout(); // Force logout if token disappears
             }
         });
 
         socket.on('authenticationSuccess', (userData) => {
-            console.log(">>> [AUTH SUCCESS] Received payload from backend:", JSON.stringify(userData));
+            isSocketAuthenticated = true; // Mark socket as authenticated
+            console.log("-----------------------------------------");
+            console.log(">>> CHAT PAGE: 'authenticationSuccess' received!");
+            console.log(">>> Payload received from backend:", JSON.stringify(userData, null, 2)); // Pretty print
 
             // --- Use profile data STRICTLY FROM BACKEND ---
             currentUser.id = userData.uid;
-            // Use DB value if present (not null/undefined), otherwise keep defaultUsername
-            currentUser.name = userData.username || defaultUsername;
-            // Use DB value if present (not null/undefined/empty string), otherwise keep defaultPic
-            currentUser.profilePic = userData.profilePicUrl || defaultPic;
+            currentUser.name = userData.username || defaultUsername; // Use DB value or default
+            currentUser.profilePic = userData.profilePicUrl || defaultPic; // Use DB value or default
 
-            console.log(">>> [AUTH SUCCESS] Updated currentUser object:", currentUser);
+            console.log(">>> CHAT PAGE: Updated internal 'currentUser' object:", currentUser);
 
-            // --- Update UI elements directly from received/processed data ---
-            currentUsernameSpan.textContent = currentUser.name;
-            sidebarProfilePic.src = currentUser.profilePic;
-            sidebarProfilePic.onerror = () => {
-                console.warn(">>> [AUTH SUCCESS] Error loading profile pic from server data, reverting to default.");
-                sidebarProfilePic.src = defaultPic;
-            };
-            console.log(`>>> [AUTH SUCCESS] Set sidebar UI: Name='${currentUser.name}', PicSrc='${currentUser.profilePic}'`);
+            // --- Attempt to Update UI ---
+            console.log(">>> CHAT PAGE: Attempting to find UI elements...");
+            // Re-fetch elements within the handler to be sure they exist now
+            const nameSpan = document.getElementById('current-user-name');
+            const picImg = document.getElementById('sidebar-profile-pic');
+            console.log(">>> CHAT PAGE: Found nameSpan element:", nameSpan ? 'Yes' : 'No');
+            console.log(">>> CHAT PAGE: Found picImg element:", picImg ? 'Yes' : 'No');
 
-            // --- REMOVED saving profile data back to localStorage ---
-            console.log(">>> [AUTH SUCCESS] Skipped updating localStorage cache for profile.");
+            if (nameSpan) {
+                console.log(`>>> CHAT PAGE: BEFORE setting textContent: Current text is "${nameSpan.textContent}"`);
+                try {
+                    nameSpan.textContent = currentUser.name;
+                    console.log(`>>> CHAT PAGE: SUCCESSFULLY set nameSpan.textContent to: "${currentUser.name}"`);
+                    // Verify immediately after setting
+                    console.log(`>>> CHAT PAGE: VERIFY nameSpan.textContent is now: "${nameSpan.textContent}"`);
+                } catch (e) {
+                    console.error(">>> CHAT PAGE: ERROR setting nameSpan.textContent:", e);
+                }
+            } else {
+                console.error(">>> CHAT PAGE: FATAL! Cannot find element with ID 'current-user-name'");
+            }
 
-            isAuthenticated = true; // Mark client-side as authenticated
-            initializeChatApp(); // Initialize UI elements dependent on auth
+            if (picImg) {
+                console.log(`>>> CHAT PAGE: BEFORE setting src: Current src is "${picImg.src}"`);
+                // Clear previous onerror to prevent false positives from default/old src
+                picImg.onerror = null;
+                try {
+                    // Only set src if it's different from default AND not null/empty
+                    let newSrc = currentUser.profilePic; // Already defaults to defaultPic if needed
+                    picImg.src = newSrc;
+                    console.log(`>>> CHAT PAGE: SUCCESSFULLY set picImg.src to: "${newSrc}"`);
+                    // Verify immediately after setting
+                    console.log(`>>> CHAT PAGE: VERIFY picImg.src is now: "${picImg.src}"`);
+
+                     // Re-attach onerror AFTER setting src
+                     picImg.onerror = () => {
+                         console.warn(">>> CHAT PAGE: onerror triggered! Error loading profile pic src:", newSrc, ". Reverting to default.");
+                         picImg.src = defaultPic;
+                     };
+                 } catch (e) {
+                      console.error(">>> CHAT PAGE: ERROR setting picImg.src:", e);
+                 }
+
+            } else {
+                 console.error(">>> CHAT PAGE: FATAL! Cannot find element with ID 'sidebar-profile-pic'");
+            }
+            console.log(">>> CHAT PAGE: UI update attempts finished.");
+            console.log("-----------------------------------------");
+
+            // Initialize chat list etc. AFTER auth is successful
+            initializeChatApp();
         });
 
         socket.on('authenticationFailed', (error) => {
+            isSocketAuthenticated = false;
             console.error("Backend socket authentication failed:", error?.message || 'Unknown error');
-            alert(`Authentication session error: ${error?.message || 'Please log in again.'}`);
-            logout(); // Force logout on auth failure
+            alert("Authentication session error. Please log in again.");
+            logout();
         });
 
         socket.on('receiveMessage', (message) => {
-            if (!currentUser.id) return; // Ignore if not authenticated yet
+            if (!isSocketAuthenticated) return; // Ignore if socket isn't authed
             console.log('Message received:', message);
-            // Check if message is for the currently active chat
-            if (message.sender === currentChatId || message.sender === currentUser.id) { // Show if it's current chat OR own message reflected back
-                 displayMessage(message);
-                 scrollToBottom();
-            } else {
-                 // TODO: Handle notification / unread count for inactive chats
-                  console.log(`Received message for inactive chat from ${message.sender}`);
-                  // updateUnreadCount(message.sender, true); // Example
-            }
-            // Update contact list preview for the sender
-            updateContactPreview(message.sender, message.content, message.timestamp);
+            displayMessage(message);
+            scrollToBottom();
         });
 
-        socket.on('typingStatus', (data) => { // { senderUid, isTyping }
-            if (!currentUser.id || data.senderUid === currentUser.id) return; // Ignore self
-
-            // Only show if it's for the currently open chat
+        socket.on('typingStatus', (data) => {
+            if (!isSocketAuthenticated || data.senderUid === currentUser.id) return;
             if (data.senderUid === currentChatId) {
-                 if (data.isTyping) {
-                     showTypingIndicator();
-                 } else {
-                     hideTypingIndicator();
-                 }
+                if (data.isTyping) { showTypingIndicator(); }
+                else { hideTypingIndicator(); }
             }
-             // Update contact list preview with typing status
-             const contactItem = contactList.querySelector(`.contact-item[data-contact-id="${data.senderUid}"]`);
-             if (contactItem) {
-                  const lastMsgEl = contactItem.querySelector('.last-message');
-                  if (data.isTyping) {
-                      // Store original message to restore later
-                      if (!lastMsgEl.dataset.originalText) {
-                           lastMsgEl.dataset.originalText = lastMsgEl.innerHTML;
-                      }
-                      lastMsgEl.innerHTML = '<i style="color: var(--primary-accent);">Typing...</i>';
-                  } else {
-                      // Restore original message if it exists
-                      if (lastMsgEl.dataset.originalText) {
-                          lastMsgEl.innerHTML = lastMsgEl.dataset.originalText;
-                          delete lastMsgEl.dataset.originalText; // Clean up
-                      }
-                      // If no original text stored (e.g., page refresh), logic to fetch actual last msg needed
-                  }
-             }
         });
 
         socket.on('messageSentConfirmation', (data) => {
+            if (!isSocketAuthenticated) return;
             console.log("Server confirmed message:", data);
-            // TODO: Find the message in the UI (using tempId or dbId) and update its status tick/timestamp
+            // TODO: Update message status tick in UI using data.dbId or data.tempId
             // updateMessageStatusInUI(data.dbId || data.tempId, data.status, data.timestamp);
         });
 
         socket.on('disconnect', (reason) => {
+            isSocketAuthenticated = false;
             console.warn('Socket disconnected:', reason);
-            // TODO: Show disconnected UI state, maybe attempt reconnection based on reason
+            // TODO: Show disconnected UI state
             if (reason === 'io server disconnect') {
-                 console.error("Disconnected by server (likely auth failure/kick).");
-                 // Alert user and force logout if not already done
-                 // alert("You have been disconnected by the server. Please log in again.");
+                 console.error("Disconnected by server (likely auth failure).");
+                 // Potentially logout if not already handled by authFailed
                  // logout();
             }
         });
 
         socket.on('connect_error', (err) => {
+            isSocketAuthenticated = false;
             console.error(`Socket connection error: ${err.message}`);
             // TODO: Show connection error UI state
         });
@@ -183,18 +190,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Functions ---
+    // --- Main Application Functions ---
 
-    // Initialize the chat application interface
     function initializeChatApp() {
-        console.log("Initializing Chat App UI...");
-        // TODO: Replace sampleContacts with a call to fetch contacts from backend
+         console.log("Initializing Chat App UI (Contacts, etc)...");
+        // Display contacts (replace sampleContacts with fetched data later)
         displayContacts(sampleContacts);
-        setupMobileView();
-        // Add other init logic...
+         // Any other UI setup needed after authentication
+         setupMobileView(); // Setup mobile view toggles if needed
     }
 
-    // Display the list of contacts in the sidebar
     function displayContacts(contacts) {
         contactList.innerHTML = ''; // Clear existing list
         contacts.forEach(contact => {
@@ -203,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
             contactEl.dataset.contactId = contact.id;
 
             let displayStatus = contact.lastMessage || '';
-            // TODO: Add logic for dynamic typing status if available
+            if (contact.status === 'typing') displayStatus = '<i>Typing...</i>';
 
             contactEl.innerHTML = `
                 <img src="${contact.profilePic || 'https://via.placeholder.com/40?text=?'}" alt="${contact.name}" class="profile-pic">
@@ -221,115 +226,84 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-     // Filter contacts based on search input
      function filterContacts() {
         const searchTerm = searchContactsInput.value.toLowerCase();
-        // TODO: Replace sampleContacts with actual contact list state
         const filteredContacts = sampleContacts.filter(contact =>
             contact.name.toLowerCase().includes(searchTerm)
         );
         displayContacts(filteredContacts);
     }
 
-    // Load a specific chat into the main chat area
     function loadChat(contactId) {
         console.log("Loading chat for:", contactId);
-        // Prevent loading if not authenticated
-        if (!currentUser.id) {
-            console.warn("Attempted to load chat before user authentication complete.");
-            return;
+        if (!isSocketAuthenticated) {
+             console.warn("Cannot load chat, socket not authenticated.");
+             return;
         }
-
         currentChatId = contactId;
-        hideTypingIndicator(); // Hide indicator when switching chats
 
-        // Update highlighted contact in the list
         document.querySelectorAll('.contact-item').forEach(item => {
             item.classList.remove('active');
             if (item.dataset.contactId === contactId) {
                 item.classList.add('active');
                 const unreadEl = item.querySelector('.unread-count');
-                if (unreadEl) unreadEl.remove(); // Mark as read visually
+                if (unreadEl) unreadEl.remove();
             }
         });
 
-        // TODO: Replace sampleContacts with actual contact list state
         const contact = sampleContacts.find(c => c.id === contactId);
-        if (!contact) {
-            console.error("Contact not found:", contactId);
-             chatHeaderProfile.innerHTML = '<div class="placeholder">Select a chat</div>';
-             messageList.innerHTML = ''; // Clear messages
-            return;
-        }
+        if (!contact) return; // Handle case where contact isn't found
 
         // Update chat header
         chatHeaderProfile.innerHTML = `
             <img src="${contact.profilePic || 'https://via.placeholder.com/40?text=?'}" alt="${contact.name}" class="profile-pic">
             <div class="contact-details">
                 <span class="contact-name">${contact.name}</span>
-                <span class="contact-status">${contact.status === 'online' ? 'Online' : 'Offline'}</span> </div>`;
+                <span class="contact-status">${contact.status === 'online' ? 'Online' : (contact.status === 'typing' ? 'Typing...' : 'Offline')}</span>
+            </div>`;
 
-        // --- Load Chat History ---
+        // Load and display messages (Replace sampleMessages with fetched data later)
         messageList.innerHTML = ''; // Clear previous messages
-        // TODO: Replace sampleMessages with request to backend for history
-        console.log(`TODO: Fetch message history for chat with ${contactId}`);
-        const messages = sampleMessages[contactId] || []; // Use sample for now
+        const messages = sampleMessages[contactId] || [];
         messages.forEach(displayMessage);
-        scrollToBottom();
-        // --- End Load History ---
 
-        messageInput.focus(); // Focus input field
+        scrollToBottom();
+        messageInput.focus();
+        hideTypingIndicator();
 
          // Mobile view handling
          if (window.innerWidth <= 768) {
              showChatAreaMobile();
          }
+         // TODO: Fetch actual chat history from backend here
+         // socket.emit('getChatHistory', { chatId: contactId });
     }
 
-    // Append a single message to the message list UI
     function displayMessage(message) {
+        // Ensure currentUser.id is set before comparing
+        const isSent = currentUser.id && message.sender === currentUser.id;
         const messageEl = document.createElement('div');
-        messageEl.classList.add('message');
-        if (message.id) messageEl.dataset.messageId = message.id; // Use DB ID if available
+        messageEl.classList.add('message', isSent ? 'sent' : 'received');
+        messageEl.dataset.messageId = message.id; // Store message ID (from DB eventually)
+        messageEl.dataset.senderId = message.sender; // Store sender ID for grouping
 
-        // Use currentUser.id (set after backend auth) to check if message is sent by this user
-        const isSent = message.sender === currentUser.id;
-        messageEl.classList.add(isSent ? 'sent' : 'received');
-
-        // Ticks logic (only for sent messages, use status from DB if available)
         let ticksHtml = '';
-        if (isSent && message.status) {
-            ticksHtml = '<span class="status-ticks">';
-            switch (message.status) { // Use status from message object
-                case 'read': ticksHtml += '<i class="fas fa-check-double read"></i>'; break;
-                case 'delivered': ticksHtml += '<i class="fas fa-check-double delivered"></i>'; break;
-                case 'sent': default: ticksHtml += '<i class="fas fa-check sent"></i>'; break;
-            }
-            ticksHtml += '</span>';
-        }
-
-        // Sender name (for group chats)
+        if (isSent && message.status) { /* ... ticks logic ... */ }
         let senderNameHtml = '';
-        if (!isSent && message.senderName) {
-             senderNameHtml = `<div class="sender-name">${escapeHtml(message.senderName)}</div>`;
-        }
+        if (!isSent && message.senderName) { /* ... sender name logic ... */ }
 
-         // Profile picture (for received messages, grouped)
         let profilePicHtml = '';
         const previousMsgEl = messageList.lastElementChild;
-        const previousSender = previousMsgEl?.dataset.senderId;
+        const previousSender = previousMsgEl?.classList.contains('received') ? previousMsgEl.dataset.senderId : null;
         const showPic = !isSent && message.sender !== previousSender;
-
         if (showPic) {
-            // TODO: Get sender pic URL from actual contact data, not just sampleContacts
             const senderContact = sampleContacts.find(c => c.id === message.sender);
             const picUrl = senderContact?.profilePic || 'https://via.placeholder.com/30?text=?';
             profilePicHtml = `<img src="${picUrl}" alt="" class="profile-pic-small">`;
         }
-        messageEl.dataset.senderId = message.sender; // Store sender ID for grouping logic
 
         messageEl.innerHTML = `
-            ${showPic ? profilePicHtml : '<div style="width: 36px; flex-shrink: 0;"></div>' /* Placeholder */}
+            ${showPic ? profilePicHtml : '<div style="width: 36px; flex-shrink: 0;"></div>'}
             <div class="bubble">
                 ${senderNameHtml}
                 <p>${escapeHtml(message.content)}</p>
@@ -342,71 +316,49 @@ document.addEventListener('DOMContentLoaded', () => {
         messageList.appendChild(messageEl);
     }
 
-    // Handle sending a message
     function sendMessage() {
         const messageText = messageInput.value.trim();
-        if (messageText === '' || !currentChatId || !currentUser.id) {
-            console.warn("Cannot send message: Missing text, chat selection, or user auth.");
+        if (messageText === '' || !currentChatId || !isSocketAuthenticated || !currentUser.id) {
+            console.warn("Cannot send message: Not authenticated, no chat selected, message empty, or user ID missing.");
             return;
         }
 
-        const tempId = 'temp_' + Date.now(); // Create temporary ID for optimistic UI update
-
-        // Optimistic UI Update: Display message immediately
-        const optimisticMessage = {
-            id: tempId, // Use temp ID initially
+        const tempId = 'temp_' + Date.now(); // Temporary ID for optimistic UI update
+        const newMessage = {
+            id: tempId, // Use temporary ID for display
             sender: currentUser.id,
             content: messageText,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
-            status: 'sending' // Show as 'sending' (e.g., single grey tick)
+            status: 'sending' // Or 'sent' visually?
         };
-        displayMessage(optimisticMessage);
-        scrollToBottom();
 
+        displayMessage(newMessage); // Optimistic UI update
+        scrollToBottom();
         messageInput.value = '';
         messageInput.focus();
 
-        // Send message via Socket.IO
-        console.log("Sending message via socket:", { recipientUid: currentChatId, content: messageText, tempId: tempId });
-        if (socket && socket.connected) {
-            socket.emit('sendMessage', {
-                recipientUid: currentChatId, // TODO: Adjust for groups
-                content: messageText,
-                tempId: tempId // Send tempId for confirmation matching
-            });
-        } else {
-             console.error("Socket not connected. Cannot send message.");
-             // TODO: Handle message send failure UI (e.g., show red '!' on message)
-             // updateMessageStatusInUI(tempId, 'failed');
-             alert("Connection error. Message not sent.");
-        }
+        console.log(`Emitting 'sendMessage': Recipient=${currentChatId}, Content=${messageText.substring(0,30)}...`);
+        socket.emit('sendMessage', {
+            recipientUid: currentChatId, // Adjust for groups later
+            content: messageText,
+            tempId: tempId // Send tempId to server for confirmation mapping
+        });
 
-        // Update contact list preview
-        updateContactPreview(currentChatId, `You: ${messageText}`, optimisticMessage.timestamp);
+        updateContactPreview(currentChatId, `You: ${messageText}`, newMessage.timestamp);
         hideTypingIndicator();
     }
 
-    // Update the last message preview in the contact list
     function updateContactPreview(contactId, message, timestamp) {
-         // TODO: Use actual contact list state, not sampleContacts
-        const contactItem = contactList.querySelector(`.contact-item[data-contact-id="${contactId}"]`);
+         const contactItem = contactList.querySelector(`.contact-item[data-contact-id="${contactId}"]`);
         if (contactItem) {
-             const msgPreview = message.length > 30 ? message.substring(0, 30) + '...' : message;
-             // Use textContent to prevent XSS issues in preview
-             contactItem.querySelector('.last-message').textContent = msgPreview;
-             // Clear any potential 'typing...' indicator stored in data attribute
-              const lastMsgEl = contactItem.querySelector('.last-message');
-              if (lastMsgEl.dataset.originalText) delete lastMsgEl.dataset.originalText;
-
-             contactItem.querySelector('.timestamp').textContent = timestamp;
-             // Optional: Move contact to top
-             // contactList.prepend(contactItem);
+            // Be careful not to inject HTML here if message comes from user input
+            contactItem.querySelector('.last-message').textContent = message;
+            contactItem.querySelector('.timestamp').textContent = timestamp;
         }
     }
 
-    // Utility to escape HTML special characters
     function escapeHtml(unsafe) {
-         if (typeof unsafe !== 'string') return '';
+         if (typeof unsafe !== 'string') return ''; // Handle non-string input
         return unsafe
              .replace(/&/g, "&amp;")
              .replace(/</g, "&lt;")
@@ -415,34 +367,32 @@ document.addEventListener('DOMContentLoaded', () => {
              .replace(/'/g, "&#039;");
     }
 
-    // Scroll the message list to the bottom
     function scrollToBottom() {
         setTimeout(() => {
-            messageList.scrollTop = messageList.scrollHeight;
-        }, 50); // Small delay allows DOM to update fully
+            if (messageList) messageList.scrollTop = messageList.scrollHeight;
+        }, 50); // Small delay might help ensure DOM is updated
     }
 
     // --- Typing Indicator Logic ---
     let typingTimer; const typingTimeout = 1500;
     function handleTyping() {
-        if (!currentChatId || !currentUser.id || !socket || !socket.connected) return;
-
-        // Indicate locally immediately? Or only when others type? Let's only emit.
-        console.log("Typing event triggered..."); // Log typing
-
-        // Clear previous timer
-        clearTimeout(typingTimer);
-
-        // Emit 'typing' event (true)
+        if (!currentChatId || !isSocketAuthenticated) return;
+        // Tell backend you started typing
         socket.emit('typing', { recipientUid: currentChatId, isTyping: true });
-
-        // Set a timer to emit 'stopped typing'
+        // Clear existing timer
+        clearTimeout(typingTimer);
+        // Set timer to send 'stopped typing'
         typingTimer = setTimeout(() => {
             socket.emit('typing', { recipientUid: currentChatId, isTyping: false });
         }, typingTimeout);
     }
-    function showTypingIndicator() { typingIndicator.classList.remove('hidden'); scrollToBottom(); }
-    function hideTypingIndicator() { typingIndicator.classList.add('hidden'); }
+    function showTypingIndicator() {
+        if (typingIndicator) typingIndicator.classList.remove('hidden');
+        scrollToBottom();
+    }
+    function hideTypingIndicator() {
+        if (typingIndicator) typingIndicator.classList.add('hidden');
+    }
 
     // --- Logout Function ---
     function logout() {
@@ -452,43 +402,46 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = 'login.html';
     }
 
-    // --- Mobile View Toggling ---
+    // --- Mobile View Toggling Functions ---
     function setupMobileView() {
         if (window.innerWidth <= 768) {
-            showSidebarMobile(); // Start by showing sidebar
+            showSidebarMobile();
         } else {
-            // Ensure both are visible on desktop
-             sidebarElement.style.display = 'flex';
-             chatAreaElement.style.display = 'flex';
+             // Ensure both are visible on desktop
+             document.querySelector('.sidebar')?.classList.remove('mobile-hidden');
+             document.querySelector('.chat-area')?.classList.remove('mobile-hidden');
+             removeMobileBackButton();
         }
+         // Add resize listener? (Can add complexity)
     }
     function showChatAreaMobile() {
-        sidebarElement.style.display = 'none';
-        chatAreaElement.style.display = 'flex';
-        isChatAreaVisibleMobile = true;
+        document.querySelector('.sidebar')?.classList.add('mobile-hidden');
+        document.querySelector('.chat-area')?.classList.remove('mobile-hidden');
         addMobileBackButton();
     }
     function showSidebarMobile() {
-        sidebarElement.style.display = 'flex';
-        chatAreaElement.style.display = 'none';
-        isChatAreaVisibleMobile = false;
+        document.querySelector('.sidebar')?.classList.remove('mobile-hidden');
+        document.querySelector('.chat-area')?.classList.add('mobile-hidden');
         removeMobileBackButton();
     }
     function addMobileBackButton() {
-        if (document.getElementById('mobile-back-button')) return;
+        const chatHeader = document.querySelector('.chat-header'); // Find header
+        if (!chatHeader || document.getElementById('mobile-back-button')) return;
+
         const backButton = document.createElement('button');
         backButton.innerHTML = '<i class="fas fa-arrow-left"></i>';
         backButton.id = 'mobile-back-button';
         backButton.title = "Back to Chats";
-         backButton.style.cssText = `
-            margin-right: 10px; border: none; background: none;
-            color: var(--text-secondary); font-size: 1.2em; cursor: pointer;
-            padding: 8px; flex-shrink: 0; /* Prevent shrinking */
-        `; // Basic styles
         backButton.onclick = showSidebarMobile;
-        chatHeaderProfile.parentNode.insertBefore(backButton, chatHeaderProfile);
+        // Prepend inside chat-header, before the contact profile div
+        const contactProfileDiv = chatHeader.querySelector('.contact-profile');
+         if (contactProfileDiv) {
+             chatHeader.insertBefore(backButton, contactProfileDiv);
+         } else { // Fallback if structure changes
+              chatHeader.prepend(backButton);
+         }
     }
-     function removeMobileBackButton() {
+    function removeMobileBackButton() {
         const backButton = document.getElementById('mobile-back-button');
         if (backButton) backButton.remove();
     }
@@ -497,12 +450,10 @@ document.addEventListener('DOMContentLoaded', () => {
     sendButton.addEventListener('click', sendMessage);
     messageInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-        else { handleTyping(); }
+        else { handleTyping(); } // Trigger typing on other keys
     });
     searchContactsInput.addEventListener('input', filterContacts);
     logoutButton.addEventListener('click', logout);
-    // Add listener for window resize to handle view changes (optional)
-    // window.addEventListener('resize', setupMobileView);
 
     // --- Initial Connection ---
     connectWebSocket(); // Start the connection and authentication process
