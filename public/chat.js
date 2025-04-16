@@ -1,18 +1,20 @@
-// public/chat.js - Truly Complete Version (April 16, 2025)
+// public/chat.js - Complete Version (April 16, 2025 - With Listener Registration Logs)
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- Authentication Check (Uses localStorage for token/flag only) ---
     const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-    const storedToken = localStorage.getItem('firebaseIdToken');
+    const storedToken = localStorage.getItem('firebaseIdToken'); // Needed to auth socket
     if (!isAuthenticated || !storedToken) {
         console.warn("User not authenticated or token missing. Redirecting to login.");
-        localStorage.clear();
+        localStorage.clear(); // Clear everything on auth failure
         window.location.href = 'login.html';
-        return;
+        return; // Stop execution
     }
 
     // --- Define Defaults ---
+    // Use a self-contained SVG Data URI for the default picture
     const defaultPic = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iI2VlZSIvPjxwYXRoIGQ9Ik0yMCAyNUMxNy4zMSAyNSAxNSAyNy4zMSAxNSAzMEMxNSA2LjIgNCAzIDM3LjYyIDMwIDM3LjYyIDM0LjM0IDM3LjYyIDM0LjM0IDE3LjYyIDM0LjM0IDE1LjYyIDM0LjM0IDE3LjYyIDI1LjYyIDI1LjYyIDM0LjM0IDE1LjYyIDMwIDMwIDM3LjYyIDM0LjM0IDE1LjYyIDM0LjM0IDE3LjYyIDM0LjM0IDE1LjYyIDI1IDI1IDIwIDI1IiBmaWxsPSIjYWFhIi8+PC9zdmc+';
+    // Use phone number from login as default name, or a generic fallback
     const defaultUsername = localStorage.getItem('userPhoneNumber') || 'My Username';
 
     // --- DOM Elements ---
@@ -26,7 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const typingIndicator = document.getElementById('typing-indicator');
     const searchContactsInput = document.getElementById('search-contacts');
     const logoutButton = document.getElementById('logout-button');
-    console.log("[Logout Debug] Found logout button element:", logoutButton); // Logout debug
+    // *** Logout Debug Log ***
+    console.log("[Logout Debug] Found logout button element:", logoutButton);
     const currentUsernameSpan = document.getElementById('current-user-name');
     const sidebarProfilePic = document.getElementById('sidebar-profile-pic');
 
@@ -38,9 +41,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- State ---
     let currentChatId = null;
-    let currentUser = { id: null, name: defaultUsername, profilePic: defaultPic };
-    let socket = null;
-    let isSocketAuthenticated = false;
+    let currentUser = { // User profile data, populated after successful auth
+        id: null,
+        name: defaultUsername,
+        profilePic: defaultPic
+    };
+    let socket = null; // Socket instance for this page
+    let isSocketAuthenticated = false; // Track socket auth state
 
     // --- Sample Data (Remove/Replace when backend provides real data) ---
     const sampleContacts = [ { id: 'user_jane', name: 'Jane Doe', profilePicUrl: null, lastMessage: 'Okay', timestamp: '10:30 AM', unread: 1, status: 'online' }, { id: 'user_john', name: 'John Smith', profilePicUrl: null, lastMessage: 'Sounds good!', timestamp: 'Yesterday', unread: 0, status: 'offline' }, ];
@@ -50,35 +57,45 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Socket.IO Connection ---
     function connectWebSocket() {
         if (typeof io === 'undefined') {
-            console.error("Socket.IO client library (io) not found. Ensure '/socket.io/socket.io.js' is included correctly in chat.html BEFORE chat.js");
+            console.error("! chat.js: Socket.IO client library (io) not found. Ensure '/socket.io/socket.io.js' is included correctly in chat.html BEFORE chat.js");
             alert("Chat initialization error. Cannot connect to server.");
             return;
         }
-        console.log("Attempting to connect WebSocket...");
-        if (socket && socket.connected) { console.log("WebSocket already connected."); return; }
+        console.log("chat.js: Attempting to connect WebSocket...");
+        if (socket && socket.connected) {
+            console.log("chat.js: WebSocket already connected.");
+            return;
+        }
         socket = io({ /* options */ });
 
+        // --- Socket Event Handlers ---
+        console.log("chat.js: Setting up socket event listeners..."); // Log setup start
+
         socket.on('connect', () => {
-            console.log('Socket connected:', socket.id);
+            console.log('chat.js: Event listener fired: connect. Socket ID:', socket.id); // Log event fired
             isSocketAuthenticated = false;
             const idToken = localStorage.getItem('firebaseIdToken');
             if (idToken) {
-                console.log("Attempting to authenticate socket with backend...");
+                console.log("chat.js: connect handler - Emitting authenticate event...");
                 socket.emit('authenticate', idToken);
-            } else { console.error("Token missing on connect. Logging out."); logout(); }
+            } else { console.error("chat.js: connect handler - Token missing! Logging out."); logout(); }
         });
+        console.log("chat.js: Listener attached for 'connect'"); // Log listener attached
 
         socket.on('authenticationSuccess', (userData) => {
-            isSocketAuthenticated = true;
+            // This is the handler we expect to run
+            isSocketAuthenticated = true; // Mark socket as authenticated *now*
             console.log("-----------------------------------------");
-            console.log(">>> CHAT PAGE: 'authenticationSuccess' received!");
+            console.log(">>> CHAT PAGE: Event listener fired: authenticationSuccess!"); // Log event fired
             console.log(">>> Payload received from backend:", JSON.stringify(userData, null, 2));
 
+            // --- Use profile data STRICTLY FROM BACKEND ---
             currentUser.id = userData.uid;
             currentUser.name = userData.username || defaultUsername;
             currentUser.profilePic = userData.profilePicUrl || defaultPic;
             console.log(">>> CHAT PAGE: Updated internal 'currentUser' object:", currentUser);
 
+            // --- Attempt to Update UI ---
             console.log(">>> CHAT PAGE: Attempting to find UI elements...");
             const nameSpan = document.getElementById('current-user-name');
             const picImg = document.getElementById('sidebar-profile-pic');
@@ -96,25 +113,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (picImg) {
                 console.log(`>>> CHAT PAGE: BEFORE setting src: Current src is "${picImg.src}"`);
-                picImg.onerror = null;
+                picImg.onerror = null; // Clear previous handler
                 try {
                     let newSrc = currentUser.profilePic;
-                    picImg.src = newSrc;
+                    picImg.src = newSrc; // Set the source
                     console.log(`>>> CHAT PAGE: SUCCESSFULLY set picImg.src to: "${newSrc}"`);
                     console.log(`>>> CHAT PAGE: VERIFY picImg.src is now: "${picImg.src}"`);
+                    // Re-attach onerror AFTER setting src
                     picImg.onerror = () => {
                         console.warn(">>> CHAT PAGE: onerror triggered! Error loading profile pic src:", newSrc, ". Reverting to default.");
-                        picImg.src = defaultPic;
+                        picImg.src = defaultPic; // Fallback to default SVG on error
                     };
                 } catch (e) { console.error(">>> CHAT PAGE: ERROR setting picImg.src:", e); }
             } else { console.error(">>> CHAT PAGE: FATAL! Cannot find element with ID 'sidebar-profile-pic'"); }
             console.log(">>> CHAT PAGE: UI update attempts finished.");
             console.log("-----------------------------------------");
 
-            initializeChatApp(); // Init contacts etc. AFTER auth success
+            // Initialize contacts etc. AFTER auth is successful and UI updated
+            initializeChatApp();
         });
+        console.log("chat.js: Listener attached for 'authenticationSuccess'"); // Log listener attached
 
         socket.on('authenticationFailed', (error) => {
+            console.log("chat.js: Event listener fired: authenticationFailed"); // Log event fired
             isSocketAuthenticated = false;
             console.error(">>> CHAT PAGE: Backend socket authentication failed:", error?.message || 'Unknown error');
             const message = error?.message || 'Authentication failed.';
@@ -122,25 +143,57 @@ document.addEventListener('DOMContentLoaded', () => {
             else { alert(`Authentication error: ${message}`); }
             logout();
         });
+        console.log("chat.js: Listener attached for 'authenticationFailed'"); // Log listener attached
 
         socket.on('receiveMessage', (message) => {
+            console.log("chat.js: Event listener fired: receiveMessage"); // Log event fired
             if (!isSocketAuthenticated) return;
-            console.log('Message received:', message);
             displayMessage(message);
             scrollToBottom();
         });
+        console.log("chat.js: Listener attached for 'receiveMessage'"); // Log listener attached
 
         socket.on('typingStatus', (data) => {
+            console.log("chat.js: Event listener fired: typingStatus"); // Log event fired
             if (!isSocketAuthenticated || !currentUser.id || data.senderUid === currentUser.id) return;
             if (data.senderUid === currentChatId) {
                 if (data.isTyping) { showTypingIndicator(); } else { hideTypingIndicator(); }
             }
         });
+        console.log("chat.js: Listener attached for 'typingStatus'"); // Log listener attached
 
-        socket.on('messageSentConfirmation', (data) => { /* ... TODO: Handle confirmation ... */ });
-        socket.on('disconnect', (reason) => { isSocketAuthenticated = false; console.warn('Socket disconnected:', reason); /* TODO: Show UI state */ });
-        socket.on('connect_error', (err) => { isSocketAuthenticated = false; console.error(`Socket connection error: ${err.message}`); /* TODO: Show UI state */ });
-        socket.on('error', (error) => { console.error("Server Error:", error); alert(`Server Error: ${error.message || 'Unknown error'}`); });
+        socket.on('messageSentConfirmation', (data) => {
+             console.log("chat.js: Event listener fired: messageSentConfirmation"); // Log event fired
+            if (!isSocketAuthenticated) return;
+            console.log("Server confirmed message:", data);
+             // TODO: Update UI tick status
+        });
+        console.log("chat.js: Listener attached for 'messageSentConfirmation'"); // Log listener attached
+
+        socket.on('disconnect', (reason) => {
+             console.log("chat.js: Event listener fired: disconnect"); // Log event fired
+            isSocketAuthenticated = false;
+            console.warn('Socket disconnected:', reason);
+             // TODO: Show UI disconnected state
+        });
+        console.log("chat.js: Listener attached for 'disconnect'"); // Log listener attached
+
+        socket.on('connect_error', (err) => {
+             console.log("chat.js: Event listener fired: connect_error"); // Log event fired
+            isSocketAuthenticated = false;
+            console.error(`Socket connection error: ${err.message}`);
+             // TODO: Show UI error state
+        });
+        console.log("chat.js: Listener attached for 'connect_error'"); // Log listener attached
+
+        socket.on('error', (error) => {
+             console.log("chat.js: Event listener fired: error"); // Log event fired
+            console.error("Error message from server:", error);
+            alert(`Server Error: ${error.message || 'Unknown error'}`);
+        });
+        console.log("chat.js: Listener attached for 'error'"); // Log listener attached
+
+        console.log("chat.js: Finished setting up socket event listeners."); // Log setup end
 
     } // End connectWebSocket
 
@@ -148,15 +201,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initializeChatApp() {
         console.log("[Initialize] initializeChatApp started...");
-        console.log("Initializing Chat App UI (Contacts, etc)...");
         // TODO: Fetch real contacts from backend
-        // socket.emit('getContacts');
         displayContacts(sampleContacts); // Using sample data for now
         setupMobileView();
     }
 
     function displayContacts(contacts) {
-        if (!contactList) return;
+        if (!contactList) { console.error("Contact list element not found"); return; }
         contactList.innerHTML = '';
         contacts.forEach(contact => {
             const contactEl = document.createElement('div');
@@ -185,7 +236,6 @@ document.addEventListener('DOMContentLoaded', () => {
      function filterContacts() {
         if (!searchContactsInput) return;
         const searchTerm = searchContactsInput.value.toLowerCase();
-        // TODO: Filter actual contact list state
         const filteredContacts = sampleContacts.filter(contact => contact.name.toLowerCase().includes(searchTerm));
         displayContacts(filteredContacts);
     }
@@ -200,8 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (item.dataset.contactId === contactId) item.querySelector('.unread-count')?.remove();
         });
 
-        // TODO: Fetch actual contact details
-        const contact = sampleContacts.find(c => c.id === contactId);
+        const contact = sampleContacts.find(c => c.id === contactId); // TODO: Use real contact data
         if (!contact) {
              console.error("Contact not found for ID:", contactId);
              if(chatHeaderProfile) chatHeaderProfile.innerHTML = `<div class="placeholder">Contact not found</div>`;
@@ -215,14 +264,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <img src="${contactPic}" alt="${escapeHtml(contact.name)}" class="profile-pic" onerror="this.onerror=null; this.src='${defaultPic}';">
                 <div class="contact-details">
                     <span class="contact-name">${escapeHtml(contact.name)}</span>
-                    <span class="contact-status">${contact.status === 'online' ? 'Online' : 'Offline'}</span> </div>`;
+                    <span class="contact-status">${contact.status === 'online' ? 'Online' : 'Offline'}</span>
+                </div>`;
         }
 
         if (messageList) messageList.innerHTML = '';
-        // TODO: Fetch real messages
-        const messages = sampleMessages[contactId] || [];
+        const messages = sampleMessages[contactId] || []; // TODO: Fetch real messages
         messages.forEach(displayMessage);
-
         scrollToBottom();
         if (messageInput) messageInput.focus();
         hideTypingIndicator();
@@ -237,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
         messageEl.dataset.messageId = message.id;
         messageEl.dataset.senderId = message.sender;
 
-        let ticksHtml = ''; // TODO: Implement tick logic
+        let ticksHtml = ''; // TODO: Ticks based on actual status
         let senderNameHtml = '';
         if (!isSent && message.senderName) senderNameHtml = `<div class="sender-name">${escapeHtml(message.senderName)}</div>`;
 
@@ -246,8 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const previousSender = previousMsgEl?.classList.contains('received') ? previousMsgEl.dataset.senderId : null;
         const showPic = !isSent && message.sender !== previousSender;
         if (showPic) {
-            // TODO: Get sender's actual picture
-            const senderContact = sampleContacts.find(c => c.id === message.sender);
+            const senderContact = sampleContacts.find(c => c.id === message.sender); // TODO: Use real data
             const picUrl = senderContact?.profilePicUrl || senderContact?.profilePic || defaultPic;
             profilePicHtml = `<img src="${picUrl}" alt="" class="profile-pic-small" onerror="this.onerror=null; this.src='${defaultPic}';">`;
         }
@@ -272,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (messageText === '' || !currentChatId || !isSocketAuthenticated || !currentUser.id) return;
         const tempId = 'temp_' + Date.now();
         const newMessage = { id: tempId, sender: currentUser.id, content: messageText, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }), status: 'sending' };
-        displayMessage(newMessage);
+        displayMessage(newMessage); // Optimistic UI update
         scrollToBottom();
         messageInput.value = ''; messageInput.focus();
 
@@ -320,7 +367,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Logout Function ---
     function logout() {
-        // *** Logout Debug Log ***
         console.log("[Logout Debug] Logout function CALLED!");
         console.log("Logging out...");
         if (socket) {
@@ -336,58 +382,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Mobile View Toggling Functions ---
     function setupMobileView() {
-        // Run on initial load and potentially on resize
+        if (!sidebarElement || !chatAreaElement) return; // Ensure elements exist
         if (window.innerWidth <= 768) {
-            // Start by showing sidebar, hide chat area initially
-            showSidebarMobile();
+            showSidebarMobile(); // Start by showing sidebar on mobile load
         } else {
-            // Ensure both are visible on desktop
-             if(sidebarElement) sidebarElement.classList.remove('mobile-hidden');
-             if(chatAreaElement) chatAreaElement.classList.remove('mobile-hidden');
+             sidebarElement.classList.remove('mobile-hidden');
+             chatAreaElement.classList.remove('mobile-hidden');
              removeMobileBackButton();
         }
-        // Consider adding a resize listener if dynamic changes are needed:
-        // window.addEventListener('resize', setupMobileView);
     }
-
     function showChatAreaMobile() {
         if(sidebarElement) sidebarElement.classList.add('mobile-hidden');
         if(chatAreaElement) chatAreaElement.classList.remove('mobile-hidden');
         addMobileBackButton();
     }
-
     function showSidebarMobile() {
         if(sidebarElement) sidebarElement.classList.remove('mobile-hidden');
         if(chatAreaElement) chatAreaElement.classList.add('mobile-hidden');
         removeMobileBackButton();
     }
-
     function addMobileBackButton() {
         const chatHeader = document.querySelector('.chat-header');
-        // Prevent adding multiple buttons
         if (!chatHeader || document.getElementById('mobile-back-button')) return;
-
         const backButton = document.createElement('button');
         backButton.innerHTML = '<i class="fas fa-arrow-left"></i>';
         backButton.id = 'mobile-back-button';
         backButton.title = "Back to Chats";
-        // Apply styles via JS or dedicated CSS class
-        backButton.style.cssText = `
-            margin-right: 10px; border: none; background: none;
-            color: var(--text-secondary); font-size: 1.2em;
-            cursor: pointer; padding: 8px; flex-shrink: 0; order: -1; /* Place it first */
-            `;
+        backButton.style.cssText = `margin-right: 10px; border: none; background: none; color: var(--text-secondary); font-size: 1.2em; cursor: pointer; padding: 8px; flex-shrink: 0; order: -1;`;
         backButton.onclick = showSidebarMobile;
-
-        // Prepend button within chat-header
-        chatHeader.prepend(backButton);
+        const contactProfileDiv = chatHeader.querySelector('.contact-profile');
+         if (contactProfileDiv) { chatHeader.insertBefore(backButton, contactProfileDiv); }
+         else { chatHeader.prepend(backButton); }
     }
-
     function removeMobileBackButton() {
         const backButton = document.getElementById('mobile-back-button');
         if (backButton) backButton.remove();
     }
-
 
     // --- Event Listeners ---
     if (sendButton) sendButton.addEventListener('click', sendMessage);
@@ -396,7 +426,6 @@ document.addEventListener('DOMContentLoaded', () => {
         else { handleTyping(); }
     });
     if (searchContactsInput) searchContactsInput.addEventListener('input', filterContacts);
-
     if (logoutButton) {
          console.log("[Logout Debug] Attaching click listener to logout button...");
          logoutButton.addEventListener('click', logout);
