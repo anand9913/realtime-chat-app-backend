@@ -1,4 +1,4 @@
-// server.js - Complete Version for Search-and-Chat (April 16, 2025)
+// server.js - Complete Version for Search-and-Chat with Contact Persistence (April 16, 2025)
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
@@ -24,11 +24,11 @@ try {
 }
 
 // --- Middleware ---
-app.use(express.static(path.join(__dirname, 'public'))); // Serve frontend files
-app.use(express.json()); // Allow JSON request bodies
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
 // --- Routes ---
-app.get('/', (req, res) => res.redirect('/login.html')); // Redirect root to login
+app.get('/', (req, res) => res.redirect('/login.html'));
 
 // --- Socket.IO Connection Handling ---
 io.on('connection', (socket) => {
@@ -39,9 +39,9 @@ io.on('connection', (socket) => {
     socket.on('authenticate', async (idToken) => {
         if (socket.user) { console.log(`[AUTH] Socket ${socket.id} already authenticated.`); return; }
         if (!idToken) {
-            console.log(`[AUTH] Socket ${socket.id} auth failed: No token.`);
-            socket.emit('authenticationFailed', { message: 'No token provided.' });
-            socket.disconnect(); return;
+             console.log(`[AUTH] Socket ${socket.id} auth failed: No token.`);
+             socket.emit('authenticationFailed', { message: 'No token provided.' });
+             socket.disconnect(); return;
         }
         console.log(`[AUTH] Socket ${socket.id} attempting authentication...`);
         let uid;
@@ -65,8 +65,7 @@ io.on('connection', (socket) => {
 
             socket.user = { uid: uid, phoneNumber: phoneNumber, username: userProfile.username ?? null, profilePicUrl: userProfile.profile_pic_url ?? null };
             console.log(`[AUTH STEP] Assigned data to socket.user:`, socket.user);
-            socket.join(uid);
-            console.log(`[AUTH STEP] Socket ${socket.id} joined room ${uid}.`);
+            socket.join(uid); console.log(`[AUTH STEP] Socket ${socket.id} joined room ${uid}.`);
 
             const successPayload = { uid: socket.user.uid, phoneNumber: socket.user.phoneNumber, username: socket.user.username, profilePicUrl: socket.user.profilePicUrl };
             console.log(`[AUTH EMIT] Emitting 'authenticationSuccess' for ${uid}:`, JSON.stringify(successPayload));
@@ -96,23 +95,53 @@ io.on('connection', (socket) => {
         } catch (dbError) { console.error(`[PROFILE UPDATE] DB Error for ${uid}:`, dbError); socket.emit('profileUpdateError', { message: 'DB error.' }); }
     }); // End 'updateProfile'
 
-    // --- Handle Sending Messages ---
-    // Requires 'messages' table
+    // --- Handle Sending Messages (Adds Contact on First Message) ---
+    // Requires 'messages' and 'contacts' tables
     socket.on('sendMessage', async (messageData) => {
         if (!socket.user) return socket.emit('error', { message: 'Auth required.' });
         const senderUid = socket.user.uid; const recipientUid = messageData.recipientUid; const content = messageData.content?.trim(); const tempId = messageData.tempId;
         if (!recipientUid || !content) return socket.emit('error', { message: 'Missing recipient/content.' });
         if (recipientUid === senderUid) return socket.emit('error', { message: 'Cannot send to self.' });
         console.log(`[MSG SEND] From ${senderUid} to ${recipientUid}: ${content.substring(0, 30)}...`);
+        let client = null;
         try {
+            client = await db.pool.connect(); await client.query('BEGIN');
+
+            // 1. Add contact relationship if first message (check one direction is enough)
+            const checkContactQuery = 'SELECT 1 FROM contacts WHERE user_uid = $1 AND contact_uid = $2';
+            const { rowCount } = await client.query(checkContactQuery, [senderUid, recipientUid]);
+            if (rowCount === 0) {
+                console.log(`[MSG SEND] First message detected. Adding contact relationship: ${senderUid} <-> ${recipientUid}`);
+                const insertContactQuery = 'INSERT INTO contacts (user_uid, contact_uid) VALUES ($1, $2), ($2, $1) ON CONFLICT DO NOTHING'; // Insert both ways
+                await client.query(insertContactQuery, [senderUid, recipientUid]);
+            }
+
+            // 2. Save message to Database
             const insertMsgQuery = `INSERT INTO messages (sender_uid, recipient_uid, content) VALUES ($1, $2, $3) RETURNING message_id, "timestamp", status`;
-            const { rows } = await db.query(insertMsgQuery, [senderUid, recipientUid, content]);
+            const { rows } = await client.query(insertMsgQuery, [senderUid, recipientUid, content]);
             const savedMessage = rows[0]; if (!savedMessage) throw new Error("Msg save failed.");
             console.log(`[MSG SEND] Message saved ID: ${savedMessage.message_id}`);
-            const msgForRecipient = { id: savedMessage.message_id, sender: senderUid, content: content, timestamp: savedMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) };
-            io.to(recipientUid).emit('receiveMessage', msgForRecipient); console.log(`[MSG SEND] Emitted 'receiveMessage' to room ${recipientUid}`);
-            socket.emit('messageSentConfirmation', { tempId: tempId || null, dbId: savedMessage.message_id, timestamp: savedMessage.timestamp, status: savedMessage.status });
-        } catch (dbError) { console.error(`[MSG SEND] DB Error from ${senderUid}:`, dbError); socket.emit('error', { message: 'Failed to send message.' }); }
+
+            await client.query('COMMIT'); // Commit transaction
+
+            // 3. Emit message to recipient (include sender profile info)
+            const messageForRecipient = {
+                 id: savedMessage.message_id, sender: senderUid,
+                 senderName: socket.user.username || senderUid, // Use current sender info
+                 senderPic: socket.user.profilePicUrl,
+                 content: content,
+                 timestamp: savedMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+            };
+            io.to(recipientUid).emit('receiveMessage', messageForRecipient);
+            console.log(`[MSG SEND] Emitted 'receiveMessage' to room ${recipientUid}`);
+
+            // 4. Send confirmation back to sender
+             socket.emit('messageSentConfirmation', { tempId: tempId || null, dbId: savedMessage.message_id, timestamp: savedMessage.timestamp, status: savedMessage.status });
+        } catch (error) {
+            if (client) await client.query('ROLLBACK');
+            console.error(`[MSG SEND] Error processing message from ${senderUid} to ${recipientUid}:`, error);
+            socket.emit('error', { message: 'Failed to send message.' });
+        } finally { if (client) client.release(); }
     }); // End 'sendMessage'
 
     // --- Handle Request for Chat History ---
@@ -121,7 +150,7 @@ io.on('connection', (socket) => {
         if (!socket.user) return socket.emit('error', { message: 'Auth required.' });
         const currentUserUid = socket.user.uid; const otherUserUid = data?.chatId;
         if (!otherUserUid) return socket.emit('error', { message: 'Chat ID missing.' });
-        const limit = 50; const offset = 0; // Basic pagination, implement fully later
+        const limit = 50; const offset = 0;
         console.log(`[HISTORY] User ${currentUserUid} requesting history with ${otherUserUid}`);
         try {
             const query = `SELECT message_id as id, sender_uid as sender, content, timestamp FROM messages WHERE (sender_uid = $1 AND recipient_uid = $2) OR (sender_uid = $2 AND recipient_uid = $1) ORDER BY timestamp DESC LIMIT $3 OFFSET $4;`;
@@ -132,21 +161,46 @@ io.on('connection', (socket) => {
         } catch (dbError) { console.error(`[HISTORY] DB error for ${currentUserUid}<->${otherUserUid}:`, dbError); socket.emit('error', { message: 'Failed to load history.' }); }
     }); // End 'getChatHistory'
 
+    // --- Handle Request for Contact List ---
+    // Requires 'contacts' and 'users' tables
+    socket.on('getContacts', async () => {
+         if (!socket.user) return socket.emit('error', { message: 'Auth required.' });
+         const currentUserUid = socket.user.uid;
+         console.log(`[CONTACTS] User ${currentUserUid} requesting contact list.`);
+         try {
+              // Fetch contacts JOINED with user details
+              // TODO: Add last message info later
+              const query = `
+                  SELECT u.uid as id, u.username, u.profile_pic_url as "profilePicUrl", u.last_seen as "lastSeen"
+                  FROM users u JOIN contacts c ON u.uid = c.contact_uid
+                  WHERE c.user_uid = $1 ORDER BY u.username ASC;
+              `;
+              const { rows } = await db.query(query, [currentUserUid]);
+              console.log(`[CONTACTS] Sending ${rows.length} contacts for user ${currentUserUid}`);
+              // TODO: Add online status here based on a separate online user map/set
+              socket.emit('contactList', rows);
+         } catch (dbError) {
+              console.error(`[CONTACTS] DB error fetching contacts for ${currentUserUid}:`, dbError);
+              socket.emit('error', { message: 'Failed to load contacts.' });
+         }
+    }); // End 'getContacts'
+
     // --- Handle User Search ---
     socket.on('searchUsers', async (searchTerm) => {
         if (!socket.user) return socket.emit('error', { message: 'Auth required.' });
-        const currentUserUid = socket.user.uid;
-        const term = (typeof searchTerm === 'string' ? searchTerm.trim() : '').toLowerCase();
+        const currentUserUid = socket.user.uid; const term = (searchTerm || '').trim().toLowerCase();
         if (!term) return socket.emit('searchResultsUsers', []);
         console.log(`[SEARCH] User ${currentUserUid} searching for: "${term}"`);
         try {
-            const query = `SELECT uid as id, username, profile_pic_url as profilePicUrl FROM users WHERE (LOWER(username) LIKE $1 OR phone_number LIKE $2) AND uid != $3 LIMIT 15;`;
+            const query = `SELECT uid as id, username, profile_pic_url as "profilePicUrl" FROM users WHERE (LOWER(username) LIKE $1 OR phone_number LIKE $2) AND uid != $3 LIMIT 15;`;
             const pattern = `%${term}%`;
             const { rows } = await db.query(query, [pattern, pattern, currentUserUid]);
             console.log(`[SEARCH] Found ${rows.length} users matching "${term}"`);
             socket.emit('searchResultsUsers', rows);
-        } catch (dbError) { console.error(`[SEARCH] DB error searching users for "${term}" by ${currentUserUid}:`, dbError); socket.emit('error', { message: 'Error searching users.' }); }
+        } catch (dbError) { console.error(`[SEARCH] DB error searching users by ${currentUserUid}:`, dbError); socket.emit('error', { message: 'Error searching users.' }); }
     }); // End 'searchUsers'
+
+    // --- REMOVED 'addContact' handler ---
 
     // --- Handle Typing Indicators ---
     socket.on('typing', (data) => {
