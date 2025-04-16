@@ -1,12 +1,14 @@
-// public/chat.js - Complete Version with Persistent Contacts Logic (April 16, 2025)
+// public/chat.js - Complete Version with sendMessage Debugging (April 17, 2025)
 
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Authentication Check ---
+    // --- Authentication Check (Uses localStorage for token/flag only) ---
     const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
     const storedToken = localStorage.getItem('firebaseIdToken');
     if (!isAuthenticated || !storedToken) {
         console.warn("User not authenticated or token missing. Redirecting to login.");
-        localStorage.clear(); window.location.href = 'login.html'; return;
+        localStorage.clear(); // Clear potentially stale data
+        window.location.href = 'login.html';
+        return; // Stop execution
     }
 
     // --- Define Defaults ---
@@ -16,13 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- DOM Elements ---
     const sidebarElement = document.querySelector('.sidebar');
     const chatAreaElement = document.querySelector('.chat-area');
-    const contactList = document.getElementById('contact-list'); // Main list for contacts OR search results
+    const contactList = document.getElementById('contact-list'); // Main list for chats OR search results
     const messageList = document.getElementById('message-list');
     const messageInput = document.getElementById('message-input');
     const sendButton = document.getElementById('send-button');
     const chatHeaderProfile = document.getElementById('chat-header-profile');
     const typingIndicator = document.getElementById('typing-indicator');
-    const searchContactsInput = document.getElementById('search-contacts');
+    const searchContactsInput = document.getElementById('search-contacts'); // User search input
     const logoutButton = document.getElementById('logout-button');
     console.log("[Logout Debug] Found logout button element:", logoutButton);
     const currentUsernameSpan = document.getElementById('current-user-name');
@@ -37,12 +39,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- State ---
     let currentChatId = null; // UID of the person being chatted with
     let currentUser = { id: null, name: defaultUsername, profilePic: defaultPic };
-    let currentContacts = []; // Holds the fetched list of contacts {id, username, profilePicUrl, lastMessage?, timestamp?, unread?}
+    // currentContacts stores users fetched from backend contact list {id, username, profilePicUrl, lastMessage?, timestamp?, unread?}
+    let currentContacts = [];
     let currentMessages = {}; // Holds fetched messages, keyed by chatId { chatId: [messages] }
     let socket = null;
     let isSocketAuthenticated = false;
-    let searchDebounceTimer;
-    let currentSearchTerm = '';
+    let searchDebounceTimer; // Timer for debouncing search input
+    let currentSearchTerm = ''; // Track current search state
 
     // --- Socket.IO Connection & Handlers ---
     function connectWebSocket() {
@@ -52,30 +55,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
         socket = io({ /* options */ });
 
+        // --- Socket Event Handlers ---
+        console.log("chat.js: Setting up socket event listeners...");
+
         socket.on('connect', () => {
-            console.log('Socket connected:', socket.id);
+            console.log('chat.js: Event listener fired: connect. Socket ID:', socket.id);
             isSocketAuthenticated = false;
             const idToken = localStorage.getItem('firebaseIdToken');
-            if (idToken) { socket.emit('authenticate', idToken); }
-            else { console.error("Token missing on connect. Logging out."); logout(); }
+            if (idToken) {
+                console.log("chat.js: connect handler - Emitting authenticate event...");
+                socket.emit('authenticate', idToken);
+            } else { console.error("chat.js: connect handler - Token missing! Logging out."); logout(); }
         });
+        console.log("chat.js: Listener attached for 'connect'");
 
         socket.on('authenticationSuccess', (userData) => {
-            isSocketAuthenticated = true;
-            console.log(">>> CHAT PAGE: 'authenticationSuccess' received!");
+            isSocketAuthenticated = true; // Mark socket as authenticated
+            console.log("-----------------------------------------");
+            console.log(">>> CHAT PAGE: Event listener fired: authenticationSuccess!");
             console.log(">>> Payload received from backend:", JSON.stringify(userData, null, 2));
 
+            // --- Use profile data STRICTLY FROM BACKEND ---
             currentUser.id = userData.uid;
-            currentUser.name = userData.username || defaultUsername;
-            currentUser.profilePic = userData.profilePicUrl || defaultPic;
+            currentUser.name = userData.username || defaultUsername; // Use DB value or default
+            currentUser.profilePic = userData.profilePicUrl || defaultPic; // Use DB value or default
             console.log(">>> CHAT PAGE: Updated internal 'currentUser' object:", currentUser);
 
-            if (currentUsernameSpan) currentUsernameSpan.textContent = currentUser.name;
-            if (sidebarProfilePic) {
-                sidebarProfilePic.src = currentUser.profilePic;
-                sidebarProfilePic.onerror = () => { sidebarProfilePic.src = defaultPic; };
-            }
-            console.log(`>>> CHAT PAGE: Set sidebar UI: Name='${currentUser.name}', PicSrc='${currentUser.profilePic}'`);
+            // --- Attempt to Update UI ---
+            console.log(">>> CHAT PAGE: Attempting to find UI elements...");
+            const nameSpan = document.getElementById('current-user-name');
+            const picImg = document.getElementById('sidebar-profile-pic');
+            console.log(">>> CHAT PAGE: Found nameSpan element:", nameSpan ? 'Yes' : 'No');
+            console.log(">>> CHAT PAGE: Found picImg element:", picImg ? 'Yes' : 'No');
+            if (nameSpan) {
+                console.log(`>>> CHAT PAGE: BEFORE setting textContent: Current text is "${nameSpan.textContent}"`);
+                try { nameSpan.textContent = currentUser.name; console.log(`>>> CHAT PAGE: SUCCESSFULLY set nameSpan.textContent to: "${currentUser.name}"`); console.log(`>>> CHAT PAGE: VERIFY nameSpan.textContent is now: "${nameSpan.textContent}"`); } catch (e) { console.error(">>> CHAT PAGE: ERROR setting nameSpan.textContent:", e); }
+            } else { console.error(">>> CHAT PAGE: FATAL! Cannot find element with ID 'current-user-name'"); }
+            if (picImg) {
+                console.log(`>>> CHAT PAGE: BEFORE setting src: Current src is "${picImg.src}"`);
+                picImg.onerror = null;
+                try { let newSrc = currentUser.profilePic; picImg.src = newSrc; console.log(`>>> CHAT PAGE: SUCCESSFULLY set picImg.src to: "${newSrc}"`); console.log(`>>> CHAT PAGE: VERIFY picImg.src is now: "${picImg.src}"`); picImg.onerror = () => { console.warn(">>> CHAT PAGE: onerror triggered! Error loading profile pic src:", newSrc, ". Reverting to default."); picImg.src = defaultPic; }; } catch (e) { console.error(">>> CHAT PAGE: ERROR setting picImg.src:", e); }
+            } else { console.error(">>> CHAT PAGE: FATAL! Cannot find element with ID 'sidebar-profile-pic'"); }
+            console.log(">>> CHAT PAGE: UI update attempts finished.");
+            console.log("-----------------------------------------");
 
             // Request Contact List AFTER successful authentication
             if (socket) {
@@ -84,10 +106,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             initializeChatApp(); // Basic UI setup (like mobile view)
         });
+        console.log("chat.js: Listener attached for 'authenticationSuccess'");
 
-        socket.on('authenticationFailed', (error) => { /* ... same as before ... */ });
+        socket.on('authenticationFailed', (error) => {
+            console.log("chat.js: Event listener fired: authenticationFailed");
+            isSocketAuthenticated = false;
+            console.error(">>> CHAT PAGE: Backend socket authentication failed:", error?.message || 'Unknown error');
+            const message = error?.message || 'Authentication failed.';
+            if (message.includes('expired')) { alert("Your login session has expired. Please log in again."); }
+            else { alert(`Authentication error: ${message}`); }
+            logout();
+        });
+        console.log("chat.js: Listener attached for 'authenticationFailed'");
 
-        // --- Handle Contact List Received ---
+        // --- Handle Contact List Received from Server ---
         socket.on('contactList', (contacts) => {
             console.log("[Contacts] Received contact list:", contacts);
             currentContacts = contacts || []; // Update main contact state
@@ -96,90 +128,83 @@ document.addEventListener('DOMContentLoaded', () => {
                  displayContactsOrSearchResults(currentContacts, false); // Display contacts
             }
         });
+        console.log("chat.js: Listener attached for 'contactList'");
 
         // --- Handle Search Results ---
         socket.on('searchResultsUsers', (users) => {
             console.log("Received user search results:", users);
-            if (currentSearchTerm) { displayContactsOrSearchResults(users, true); }
+            // IMPORTANT: Only display search results IF the search bar still has text
+            if (currentSearchTerm) {
+                 displayContactsOrSearchResults(users, true); // Display results in the main list
+            }
         });
+         console.log("chat.js: Listener attached for 'searchResultsUsers'");
 
         // --- Handle Chat History ---
         socket.on('chatHistory', (data) => {
+            console.log("chat.js: Event listener fired: chatHistory");
              if (!data || !data.chatId || !Array.isArray(data.messages)) return;
              console.log(`[History] Received ${data.messages.length} messages for chat ${data.chatId}`);
              currentMessages[data.chatId] = data.messages;
-             if (data.chatId === currentChatId) {
+             if (data.chatId === currentChatId) { // If currently open chat
                  if (messageList) messageList.innerHTML = ''; // Clear loading/old
                  data.messages.forEach(displayMessage);
                  scrollToBottom();
              }
         });
+         console.log("chat.js: Listener attached for 'chatHistory'");
 
         // --- Handle Receiving Messages ---
         socket.on('receiveMessage', (message) => {
-            // message should include: { id, sender, content, timestamp, senderName, senderPic }
-            if (!isSocketAuthenticated || !message || !message.sender) return;
-            console.log('Message received:', message);
-
-            const chatId = message.sender; // Chat ID is the sender's UID in 1-on-1
-
-            // Add message to internal message cache
-            if (!currentMessages[chatId]) currentMessages[chatId] = [];
-            currentMessages[chatId].push(message);
-
-            // Ensure sender is in the contact list state (add if needed)
-            const senderContact = currentContacts.find(c => c.id === message.sender);
-            if (!senderContact) {
-                 console.log(`Adding sender ${message.sender} to contact list from received message.`);
-                 currentContacts.push({
-                     id: message.sender,
-                     username: message.senderName || message.sender, // Use name from payload
-                     profilePicUrl: message.senderPic || null // Use pic from payload
-                     // Other fields like lastMessage/timestamp will be updated by updateContactPreview
-                 });
-                 // No need to call displayContacts here, updateContactPreview will do it if not searching
-            }
-
-            // Update last message preview & re-render list (if not searching)
+             console.log("chat.js: Event listener fired: receiveMessage");
+             if (!isSocketAuthenticated || !message || !message.sender) return;
+             console.log('Message received:', message);
+             const chatId = (message.sender === currentUser.id) ? message.recipientUid : message.sender;
+             if (!chatId) return;
+             if (!currentMessages[chatId]) currentMessages[chatId] = [];
+             currentMessages[chatId].push(message);
+             const otherUserId = message.sender === currentUser.id ? message.recipientUid : message.sender;
+             const senderContact = currentContacts.find(c => c.id === otherUserId);
+             if (!senderContact) {
+                  console.log(`Adding sender ${otherUserId} to contact list state.`);
+                  currentContacts.push({ id: otherUserId, username: message.senderName || otherUserId, profilePicUrl: message.senderPic || null });
+                  // updateContactPreview will re-render if not searching
+             }
              updateContactPreview(chatId, message.content, message.timestamp);
-
-            if (chatId === currentChatId) { // If this chat is currently open
-                 displayMessage(message);
-                 scrollToBottom();
-                 // TODO: Emit 'markAsRead' event to backend?
-            } else {
-                 // TODO: Increment unread count in currentContacts state
-                 const contactToUpdate = currentContacts.find(c => c.id === chatId);
-                 if (contactToUpdate) contactToUpdate.unread = (contactToUpdate.unread || 0) + 1;
-                  console.log(`Unread message from ${message.sender} for chat ${chatId}`);
-                  if (!currentSearchTerm) displayContactsOrSearchResults(currentContacts, false); // Update UI for unread count
-            }
+             if (chatId === currentChatId) { displayMessage(message); scrollToBottom(); }
+             else { /* TODO: Increment unread count */ }
         });
+        console.log("chat.js: Listener attached for 'receiveMessage'");
 
-        // --- REMOVED 'addContactResult' Listener ---
+        // --- Other Handlers ---
+        socket.on('typingStatus', (data) => { console.log("chat.js: Event listener fired: typingStatus"); /* ... */ });
+        console.log("chat.js: Listener attached for 'typingStatus'");
+        socket.on('messageSentConfirmation', (data) => { console.log("chat.js: Event listener fired: messageSentConfirmation"); /* ... */ });
+        console.log("chat.js: Listener attached for 'messageSentConfirmation'");
+        socket.on('disconnect', (reason) => { console.log("chat.js: Event listener fired: disconnect"); /* ... */ });
+        console.log("chat.js: Listener attached for 'disconnect'");
+        socket.on('connect_error', (err) => { console.log("chat.js: Event listener fired: connect_error"); /* ... */ });
+        console.log("chat.js: Listener attached for 'connect_error'");
+        socket.on('error', (error) => { console.log("chat.js: Event listener fired: error"); /* ... */ });
+        console.log("chat.js: Listener attached for 'error'");
 
-        // ... (Other handlers: typingStatus, messageSentConfirmation, disconnect, etc.) ...
-         socket.on('typingStatus', (data) => { /* ... as before ... */ });
-         socket.on('messageSentConfirmation', (data) => { /* ... as before ... */ });
-         socket.on('disconnect', (reason) => { /* ... as before ... */ });
-         socket.on('connect_error', (err) => { /* ... as before ... */ });
-         socket.on('error', (error) => { /* ... as before ... */ });
+        console.log("chat.js: Finished setting up socket event listeners.");
 
     } // End connectWebSocket
 
 
     // --- Main Application Functions ---
 
+    /** Initializes the chat UI - displays active chats and sets mobile view */
     function initializeChatApp() {
         console.log("[Initialize] initializeChatApp started...");
-        // Display initially empty list, wait for 'contactList' event
+        // Display empty initially, wait for 'contactList' event to populate
         displayContactsOrSearchResults([], false);
         setupMobileView();
     }
 
     /**
      * Renders EITHER the list of contacts OR search results in the main sidebar list.
-     * Uses the `currentContacts` state variable for displaying contacts.
      * @param {Array} items - Array of user/chat objects {id, username, profilePicUrl, ...}
      * @param {boolean} isSearchResult - True if items are search results, false if contacts.
      */
@@ -187,60 +212,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!contactList) { console.error("Contact list element not found"); return; }
         contactList.innerHTML = ''; // Clear current list content
         console.log(`[Display List] Rendering ${items?.length || 0} items. Is Search Result: ${isSearchResult}`);
-
-        const itemsToDisplay = items || []; // Ensure it's an array
-
+        const itemsToDisplay = items || [];
         if (itemsToDisplay.length === 0) {
-            contactList.innerHTML = `<div class="no-results" style="padding: 20px; text-align: center; color: var(--text-secondary);">${isSearchResult ? 'No users found.' : 'No contacts yet. Search to start!'}</div>`;
+            contactList.innerHTML = `<div class="no-results" style="padding: 20px; text-align: center; color: var(--text-secondary);">${isSearchResult ? 'No users found.' : 'Search users to start chatting!'}</div>`;
             return;
         }
-
-        // TODO: Sort contacts by last message time if isSearchResult is false
-        // Example (requires lastMessageTimestamp property):
-        // if (!isSearchResult) { itemsToDisplay.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0)); }
-
+        // TODO: Sort contacts by last message time if !isSearchResult
         itemsToDisplay.forEach(item => {
-            if (!item || !item.id) return; // Must have an ID
-
+            if (!item || !item.id) return;
             const itemEl = document.createElement('div');
             itemEl.classList.add('contact-item');
             itemEl.dataset.contactId = item.id;
-
             let itemPic = item.profilePicUrl || defaultPic;
-            let itemName = item.username || item.name || item.id; // Use username from DB if available
+            let itemName = item.username || item.name || item.id; // Use username from DB
             let itemPreviewHtml = '';
             let metaHtml = '';
-
             if (isSearchResult) {
                 itemEl.classList.add('search-result-item');
                 const isExistingContact = currentContacts.some(c => c.id === item.id);
                 if (isExistingContact) { itemPreviewHtml = `<span class="last-message">Already in contacts</span>`; }
                 else { itemPreviewHtml = `<span class="last-message">Click to start chat</span>`; }
-                 itemEl.addEventListener('click', () => handleSearchResultClick(item)); // Use full item data
-            } else { // It's an active contact from the currentContacts state
+                itemEl.addEventListener('click', () => handleSearchResultClick(item));
+            } else { // It's a contact from the currentContacts state
                 let displayStatus = item.lastMessage || 'No messages yet';
                 let timestamp = item.timestamp || '';
                 let unread = item.unread || 0;
-                // TODO: Check typing status if added to contact state object
-
+                // TODO: Check typing status
                 itemPreviewHtml = `<span class="last-message">${escapeHtml(displayStatus)}</span>`;
-                metaHtml = `
-                     <div class="contact-meta">
-                         <span class="timestamp">${timestamp}</span>
-                         ${unread > 0 ? `<span class="unread-count">${unread}</span>` : ''}
-                     </div>`;
-                 itemEl.addEventListener('click', () => loadChat(item.id));
+                metaHtml = `<div class="contact-meta"><span class="timestamp">${timestamp}</span>${unread > 0 ? `<span class="unread-count">${unread}</span>` : ''}</div>`;
+                itemEl.addEventListener('click', () => loadChat(item.id));
             }
-
-            // Build final element HTML
-            itemEl.innerHTML = `
-                <img src="${itemPic}" alt="${escapeHtml(itemName)}" class="profile-pic" onerror="this.onerror=null; this.src='${defaultPic}';">
-                <div class="contact-info">
-                    <span class="contact-name">${escapeHtml(itemName)}</span>
-                    ${itemPreviewHtml}
-                </div>
-                ${metaHtml}
-            `;
+            itemEl.innerHTML = `<img src="${itemPic}" alt="${escapeHtml(itemName)}" class="profile-pic" onerror="this.onerror=null; this.src='${defaultPic}';"><div class="contact-info"><span class="contact-name">${escapeHtml(itemName)}</span>${itemPreviewHtml}</div>${metaHtml}`;
             contactList.appendChild(itemEl);
         });
     }
@@ -250,54 +252,43 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!userDetails || !userDetails.id || !currentUser.id) return;
         const userId = userDetails.id;
         console.log(`Search result clicked, loading chat for user: ${userId}`);
-        // The contact relationship will be added by the backend on first message.
-        // We might add them to the *local* currentContacts state immediately
-        // so they appear in the sidebar right away after search is cleared.
-        if (!currentContacts.some(c => c.id === userId)) {
-            currentContacts.push({ // Add basic info
-                 id: userId,
-                 username: userDetails.username || userId,
-                 profilePicUrl: userDetails.profilePicUrl || null
-             });
+        // Add/update contact in local state for immediate display
+        const existingContactIndex = currentContacts.findIndex(c => c.id === userId);
+        if (existingContactIndex === -1) { // Add if new
+             currentContacts.push({ id: userId, username: userDetails.username || userId, profilePicUrl: userDetails.profilePicUrl || null });
+        } else { // Update if existing (e.g., profile pic might have updated)
+             currentContacts[existingContactIndex].username = userDetails.username || userId;
+             currentContacts[existingContactIndex].profilePicUrl = userDetails.profilePicUrl || null;
         }
-        loadChat(userId); // Load the chat window
-        // Clear search input and restore contacts view in sidebar
-        if (searchContactsInput) searchContactsInput.value = '';
+        loadChat(userId); // Load chat (backend will establish contact on first message)
+        if (searchContactsInput) searchContactsInput.value = ''; // Clear search bar
         currentSearchTerm = '';
-        displayContactsOrSearchResults(currentContacts, false); // Show contacts list
+        displayContactsOrSearchResults(currentContacts, false); // Display contact list
     }
-
 
     /** Loads a chat, requests history */
     function loadChat(chatPartnerUid) {
         console.log("Loading chat for:", chatPartnerUid);
         if (!isSocketAuthenticated || !chatPartnerUid || !currentUser.id) return;
-        currentChatId = chatPartnerUid;
+        currentChatId = chatPartnerUid; // Set active chat
 
         // Highlight item in sidebar
         document.querySelectorAll('.contact-item').forEach(item => {
             item.classList.toggle('active', item.dataset.contactId === chatPartnerUid);
             if (item.dataset.contactId === chatPartnerUid) {
-                 item.querySelector('.unread-count')?.remove(); // Clear visual unread count
-                 // TODO: Also update unread count in currentContacts state and potentially notify backend
-                 const contact = currentContacts.find(c => c.id === chatPartnerUid);
-                 if (contact) contact.unread = 0;
+                item.querySelector('.unread-count')?.remove();
+                // TODO: Update unread count in currentContacts state
             }
         });
 
         // Get contact details from the currentContacts state
         const chatPartner = currentContacts.find(c => c.id === chatPartnerUid);
-        // If contact details aren't found (e.g., loaded via search but contacts not refetched), use UID
-        const chatPartnerName = chatPartner?.username || chatPartnerUid;
+        const chatPartnerName = chatPartner?.username || chatPartnerUid; // Use UID if contact not fully loaded yet
         const chatPartnerPic = chatPartner?.profilePicUrl || defaultPic;
 
         // Update chat header
         if (chatHeaderProfile) {
-             chatHeaderProfile.innerHTML = `
-                 <img src="${chatPartnerPic}" alt="${escapeHtml(chatPartnerName)}" class="profile-pic" onerror="this.onerror=null; this.src='${defaultPic}';">
-                 <div class="contact-details">
-                     <span class="contact-name">${escapeHtml(chatPartnerName)}</span>
-                     <span class="contact-status">Offline</span> </div>`;
+             chatHeaderProfile.innerHTML = `<img src="${chatPartnerPic}" alt="${escapeHtml(chatPartnerName)}" class="profile-pic" onerror="this.onerror=null; this.src='${defaultPic}';"><div class="contact-details"><span class="contact-name">${escapeHtml(chatPartnerName)}</span><span class="contact-status">Offline</span> </div>`;
         }
 
         // Request Chat History
@@ -305,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (socket && socket.connected) {
              console.log(`[History] Requesting history for chat ${chatPartnerUid}`);
              socket.emit('getChatHistory', { chatId: chatPartnerUid, limit: 50 });
-        } else { /* ... handle socket error ... */ }
+        } else { if(messageList) messageList.innerHTML = '<div class="error-history">Connection error</div>'; }
 
         if (messageInput) messageInput.focus();
         hideTypingIndicator();
@@ -338,24 +329,32 @@ document.addEventListener('DOMContentLoaded', () => {
     /** Handles sending a message */
     function sendMessage() {
         if (!messageInput) return; const messageText = messageInput.value.trim();
-        if (messageText === '' || !currentChatId || !isSocketAuthenticated || !currentUser.id) return;
+        // Use the detailed check from Response #55
+        let canSend = true; let failReason = [];
+        if (messageText === '') { canSend = false; failReason.push("Message empty"); }
+        if (!currentChatId) { canSend = false; failReason.push("No active chat"); }
+        if (!isSocketAuthenticated) { canSend = false; failReason.push("Not authed"); }
+        if (!currentUser.id) { canSend = false; failReason.push("User ID missing"); }
+        if (!socket || !socket.connected) { canSend = false; failReason.push("Socket disconnected"); }
+        if (!canSend) { console.warn("Cannot send message:", failReason.join(', ')); return; }
+
         const tempId = 'temp_' + Date.now(); const newMessage = { id: tempId, sender: currentUser.id, recipientUid: currentChatId, content: messageText, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }), status: 'sending' };
-        // Add to local message cache
         if (!currentMessages[currentChatId]) currentMessages[currentChatId] = [];
         currentMessages[currentChatId].push(newMessage);
         displayMessage(newMessage); scrollToBottom(); messageInput.value = ''; messageInput.focus();
-        if (socket && socket.connected) { socket.emit('sendMessage', { recipientUid: currentChatId, content: messageText, tempId: tempId }); } else { console.error("Cannot send message, socket disconnected."); }
+        console.log(`Emitting 'sendMessage': Recipient=${currentChatId}, Content=${messageText.substring(0,30)}...`);
+        socket.emit('sendMessage', { recipientUid: currentChatId, content: messageText, tempId: tempId });
         updateContactPreview(currentChatId, `You: ${messageText}`, newMessage.timestamp); hideTypingIndicator();
     }
 
     /** Updates the sidebar preview for a chat contact */
     function updateContactPreview(contactId, message, timestamp) {
-        const contact = currentContacts.find(c => c.id === contactId);
-        if (!contact) return; // Don't update if contact isn't in current list state
-        contact.lastMessage = message;
-        contact.timestamp = timestamp;
-        // contact.lastMessageTimestamp = Date.now(); // For sorting later
-        // Re-render the contacts list if not currently searching
+        const contactIndex = currentContacts.findIndex(c => c.id === contactId); // Find index in array
+        if (contactIndex === -1) return; // Contact not in list
+        currentContacts[contactIndex].lastMessage = message;
+        currentContacts[contactIndex].timestamp = timestamp;
+        // currentContacts[contactIndex].lastMessageTimestamp = Date.now(); // For sorting
+        // Re-render the list if not currently searching
         if (!currentSearchTerm) {
              displayContactsOrSearchResults(currentContacts, false);
         }
@@ -374,6 +373,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function addMobileBackButton() { const h=document.querySelector('.chat-header'); if(!h || document.getElementById('mobile-back-button')) return; const b=document.createElement('button'); b.innerHTML='<i class="fas fa-arrow-left"></i>'; b.id='mobile-back-button'; b.title="Back"; b.style.cssText=`margin-right:10px;border:none;background:none;color:var(--text-secondary);font-size:1.2em;cursor:pointer;padding:8px;flex-shrink:0;order:-1;`; b.onclick=showSidebarMobile; h.prepend(b); }
     function removeMobileBackButton() { const b=document.getElementById('mobile-back-button'); if(b) b.remove(); }
 
+
     // --- Event Listeners ---
     if (sendButton) sendButton.addEventListener('click', sendMessage);
     if (messageInput) messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } else { handleTyping(); } });
@@ -381,23 +381,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Search Listener
     if (searchContactsInput) {
         searchContactsInput.addEventListener('input', () => {
-             clearTimeout(searchDebounceTimer);
-             const searchTerm = searchContactsInput.value.trim();
-             currentSearchTerm = searchTerm; // Update state
+             clearTimeout(searchDebounceTimer); const searchTerm = searchContactsInput.value.trim(); currentSearchTerm = searchTerm;
              if (searchTerm.length > 1) {
-                 searchDebounceTimer = setTimeout(() => {
-                     if (socket && isSocketAuthenticated) {
-                         console.log(`[Search] Emitting 'searchUsers' for: "${searchTerm}"`);
-                         socket.emit('searchUsers', searchTerm);
-                         if(contactList) contactList.innerHTML = '<div class="loading-history">Searching...</div>';
-                     }
-                 }, 300);
-             } else {
-                  console.log("[Search] Term cleared. Displaying contacts.");
-                  displayContactsOrSearchResults(currentContacts, false); // Show contacts if search cleared
-             }
+                 searchDebounceTimer = setTimeout(() => { if (socket && isSocketAuthenticated) { console.log(`[Search] Emitting 'searchUsers' for: "${searchTerm}"`); socket.emit('searchUsers', searchTerm); if(contactList) contactList.innerHTML = '<div class="loading-history">Searching...</div>'; } }, 300);
+             } else { console.log("[Search] Term cleared. Displaying contacts."); displayContactsOrSearchResults(currentContacts, false); } // Show contacts if search cleared
          });
-         searchContactsInput.addEventListener('blur', () => { /* ... Optional blur handling ... */ });
+         searchContactsInput.addEventListener('blur', () => { setTimeout(() => { if (!contactList.contains(document.activeElement) && !searchContactsInput.value.trim()) { console.log("[Search] Input blur and empty, ensuring contacts shown."); currentSearchTerm = ''; displayContactsOrSearchResults(currentContacts, false); } }, 200); });
     }
 
     // --- Initial Connection ---
