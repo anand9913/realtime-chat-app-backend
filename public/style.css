@@ -1,4 +1,4 @@
-/* style.css - Complete Version */
+/* style.css - Complete Version with Presence Styles (April 17, 2025) */
 
 /* --- Global Styles & Variables --- */
 :root {
@@ -18,6 +18,8 @@
     --hover-bg: #f5f6f6;           /* Background color on hover */
     --active-bg: #e9edef;          /* Background color for active/selected items */
     --success-color: #00a884; /* Use accent color for success messages */
+    --online-color: #4ade80;       /* Green for online status */
+    --offline-color: #9ca3af;      /* Grey for offline status */
 }
 
 * {
@@ -112,823 +114,153 @@ input:focus {
     width: 90%;
 }
 
-.auth-container h2 {
-    margin-bottom: 10px;
-    color: var(--secondary-accent);
-}
-
-.auth-container p {
-    margin-bottom: 20px;
-    color: var(--text-secondary);
-    font-size: 0.95em;
-}
-
+.auth-container h2 { margin-bottom: 10px; color: var(--secondary-accent); }
+.auth-container p { margin-bottom: 20px; color: var(--text-secondary); font-size: 0.95em; }
 .auth-container #phone-input-section input,
-.auth-container #otp-input-section input {
-    margin-bottom: 15px;
-    text-align: center;
-}
+.auth-container #otp-input-section input { margin-bottom: 15px; text-align: center; }
+.auth-container button { background-color: var(--primary-accent); color: white; padding: 12px 20px; border-radius: 25px; width: 100%; margin-top: 10px; font-weight: bold; transition: background-color 0.2s ease; }
+.auth-container button:hover:not(:disabled) { background-color: var(--secondary-accent); opacity: 1; }
+.auth-container button:disabled { background-color: #9ad8cd; opacity: 1; }
+#otp-input-section button { margin-top: 8px; }
+#resend-otp-button { background-color: var(--primary-bg); color: var(--primary-accent); font-weight: normal; }
+#resend-otp-button:disabled { background-color: var(--primary-bg); color: var(--text-secondary); }
+#change-number-button { background: none; color: var(--link-color); font-weight: normal; margin-top: 15px; padding: 5px; width: auto; border-radius: 0; }
+#change-number-button:hover { text-decoration: underline; opacity: 1; }
+#recaptcha-container { margin: 15px auto; min-height: 80px; background: #eee; border: 1px dashed #ccc; display: flex; align-items: center; justify-content: center; font-size: 0.8em; color: var(--text-secondary); border-radius: 4px; max-width: 304px; }
 
-.auth-container button {
-    background-color: var(--primary-accent);
-    color: white;
-    padding: 12px 20px;
-    border-radius: 25px;
-    width: 100%;
-    margin-top: 10px;
-    font-weight: bold;
-    transition: background-color 0.2s ease;
-}
-
-.auth-container button:hover:not(:disabled) {
-    background-color: var(--secondary-accent);
-    opacity: 1;
-}
-
-.auth-container button:disabled {
-     background-color: #9ad8cd;
-     opacity: 1;
-}
-
-/* Specific button adjustments */
-#otp-input-section button {
-    margin-top: 8px;
-}
-#resend-otp-button {
-    background-color: var(--primary-bg);
-    color: var(--primary-accent);
-    font-weight: normal;
-}
-#resend-otp-button:disabled {
-    background-color: var(--primary-bg);
-    color: var(--text-secondary);
-}
-#change-number-button {
-    background: none;
-    color: var(--link-color);
-    font-weight: normal;
-    margin-top: 15px;
-    padding: 5px;
-    width: auto;
-    border-radius: 0;
-}
-#change-number-button:hover {
-    text-decoration: underline;
-    opacity: 1;
-}
-
-
-#recaptcha-container {
-    margin: 15px auto;
-    min-height: 80px;
-    background: #eee;
-    border: 1px dashed #ccc;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.8em;
-    color: var(--text-secondary);
-    border-radius: 4px;
-    max-width: 304px;
-}
 
 /* --- Chat App Container Styles (`chat.html`) --- */
-.chat-app-container {
-    display: flex;
-    width: 95vw;
-    height: 95vh;
-    max-width: 1600px;
-    max-height: 1000px;
-    background-color: var(--secondary-bg);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
-    border-radius: 3px;
-    overflow: hidden;
-}
+.chat-app-container { display: flex; width: 95vw; height: 95vh; max-width: 1600px; max-height: 1000px; background-color: var(--secondary-bg); box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15); border-radius: 3px; overflow: hidden; }
 
 /* --- Sidebar Styles (`chat.html`) --- */
-.sidebar {
-    width: 30%;
-    min-width: 280px;
-    max-width: 400px;
-    background-color: var(--secondary-bg);
-    border-right: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
+.sidebar { width: 30%; min-width: 280px; max-width: 400px; background-color: var(--secondary-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; height: 100%; position: relative; /* Added for search results positioning */ }
+.sidebar-header { padding: 10px 15px; background-color: var(--primary-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; position: relative; }
+.user-profile-link { display: block; text-decoration: none; color: inherit; border-radius: 4px; padding: 5px; margin-right: 45px; transition: background-color 0.15s ease; }
+.user-profile-link:hover { background-color: rgba(0,0,0, 0.05); }
+.user-profile { display: flex; align-items: center; pointer-events: none; }
+.profile-pic { width: 40px; height: 40px; border-radius: 50%; margin-right: 12px; object-fit: cover; background-color: #ccc; flex-shrink: 0; border: 1px solid var(--border-color); }
+#current-user-name { font-weight: 500; flex-grow: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-right: 10px; }
+#logout-button { position: absolute; top: 5px; right: 10px; padding: 5px 8px; font-size: 1.1em; border-radius: 50%; line-height: 1; }
+#logout-button:hover { background-color: rgba(0,0,0, 0.1); opacity: 1; }
+.search-bar { position: relative; margin-top: 10px; margin-bottom: 10px; }
+.search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); }
+.search-bar input { padding: 8px 15px 8px 40px; background-color: var(--secondary-bg); border: 1px solid var(--border-color); border-radius: 8px; height: 38px; }
+.sidebar-actions { display: flex; justify-content: space-around; align-items: center; padding-top: 5px; }
+.sidebar-actions button, .sidebar-actions .settings-link-button { padding: 5px 10px; color: var(--text-secondary); background: none; border: none; cursor: pointer; font-size: 1rem; line-height: 1; }
+.sidebar-actions .settings-link-button { display: inline-block; }
+.sidebar-actions button i, .sidebar-actions .settings-link-button i { font-size: 1.2em; vertical-align: middle; }
+.sidebar-actions button:hover, .sidebar-actions .settings-link-button:hover { opacity: 0.8; }
+.contact-list { flex-grow: 1; overflow-y: auto; border-top: 1px solid var(--border-color); position: relative; /* Ensure it's above potential search results if absolute */ z-index: 5; background-color: var(--secondary-bg); /* Ensure bg */ }
+/* Styles specific to search results container if using absolute positioning (removed in latest JS) */
+/* #search-results { position: absolute; top: 160px; left: 0; right: 0; bottom: 0; background-color: var(--secondary-bg); z-index: 10; display: none; overflow-y: auto; } */
+.no-results { padding: 20px; text-align: center; color: var(--text-secondary); }
+.contact-item { display: flex; align-items: center; padding: 12px 15px; cursor: pointer; border-bottom: 1px solid var(--border-color); transition: background-color 0.15s ease; }
+.contact-item:last-child { border-bottom: none; }
+.contact-item:hover { background-color: var(--hover-bg); }
+.contact-item.active { background-color: var(--active-bg); }
+.contact-info { flex-grow: 1; margin-left: 0; overflow: hidden; }
+.contact-name { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.last-message { display: block; font-size: 0.9em; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.last-message i { font-style: normal; color: var(--primary-accent); }
+.contact-meta { margin-left: 10px; text-align: right; font-size: 0.75em; color: var(--text-secondary); display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
+.timestamp { margin-bottom: 4px; }
+.unread-count { background-color: var(--primary-accent); color: white; font-size: 0.75em; font-weight: bold; border-radius: 10px; padding: 2px 7px; min-width: 18px; text-align: center; }
 
-.sidebar-header {
-    padding: 10px 15px;
-    background-color: var(--primary-bg);
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
-    position: relative; /* Needed for absolute positioning of logout */
-}
-
-/* Style the user profile link */
-.user-profile-link {
-    display: block; /* Make the link take up block space */
-    text-decoration: none; /* Remove underline */
-    color: inherit; /* Inherit text color */
-    border-radius: 4px;
-    padding: 5px; /* Add some padding for better click area */
-    margin-right: 45px; /* Space for logout button */
-    transition: background-color 0.15s ease;
-}
-.user-profile-link:hover {
-    background-color: rgba(0,0,0, 0.05); /* Subtle hover effect */
-}
-
-.user-profile {
-    display: flex;
-    align-items: center;
-    pointer-events: none; /* Clicks should go to the parent link */
-}
-
-.profile-pic {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    margin-right: 12px;
-    object-fit: cover;
-    background-color: #ccc; /* Placeholder */
-    flex-shrink: 0;
-    border: 1px solid var(--border-color); /* Subtle border */
-}
-
-#current-user-name {
-    font-weight: 500;
-    flex-grow: 1;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    margin-right: 10px;
-}
-
-#logout-button {
-    position: absolute; /* Position logout relative to header */
-    top: 5px; /* Fine-tune position */
-    right: 10px;
-    padding: 5px 8px;
-    font-size: 1.1em;
-    border-radius: 50%;
-    line-height: 1; /* Ensure icon centers */
-}
-#logout-button:hover {
-    background-color: rgba(0,0,0, 0.1);
-    opacity: 1;
-}
-
-.search-bar {
-    position: relative;
-    margin-top: 10px; /* Space above search bar */
-    margin-bottom: 10px;
-}
-
-.search-icon {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-secondary);
-}
-
-.search-bar input {
-    padding: 8px 15px 8px 40px;
-    background-color: var(--secondary-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    height: 38px;
-}
-
-.sidebar-actions {
-    display: flex;
-    justify-content: space-around; /* Or space-between */
-    align-items: center;
-    padding-top: 5px;
-}
-.sidebar-actions button,
-.sidebar-actions .settings-link-button { /* Style link like a button */
-    padding: 5px 10px;
-    color: var(--text-secondary);
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
-}
-.sidebar-actions .settings-link-button {
-    display: inline-block; /* Allow padding */
-}
-.sidebar-actions button i,
-.sidebar-actions .settings-link-button i {
-    font-size: 1.2em;
-    vertical-align: middle; /* Align icons better */
-}
-.sidebar-actions button:hover,
-.sidebar-actions .settings-link-button:hover {
-    opacity: 0.8;
-}
-
-.contact-list {
-    flex-grow: 1;
-    overflow-y: auto;
-    border-top: 1px solid var(--border-color);
-}
-
-.contact-item {
-    display: flex;
-    align-items: center;
-    padding: 12px 15px;
-    cursor: pointer;
-    border-bottom: 1px solid var(--border-color);
-    transition: background-color 0.15s ease;
-}
-.contact-item:last-child {
-    border-bottom: none;
-}
-
-.contact-item:hover {
-    background-color: var(--hover-bg);
-}
-
-.contact-item.active {
-    background-color: var(--active-bg);
-}
-
-.contact-info {
-    flex-grow: 1;
-    margin-left: 0;
-    overflow: hidden;
-}
-
-.contact-name {
-    display: block;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 2px;
-}
-
-.last-message {
-    display: block;
-    font-size: 0.9em;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.last-message i {
-    font-style: normal;
-    color: var(--primary-accent); /* Make typing indicator green */
-}
-
-.contact-meta {
-    margin-left: 10px;
-    text-align: right;
-    font-size: 0.75em;
-    color: var(--text-secondary);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    flex-shrink: 0;
-}
-
-.timestamp {
-    margin-bottom: 4px;
-}
-
-.unread-count {
-    background-color: var(--primary-accent);
-    color: white;
-    font-size: 0.75em;
-    font-weight: bold;
-    border-radius: 10px;
-    padding: 2px 7px;
-    min-width: 18px;
-    text-align: center;
-}
+/* --- Presence Indicator Styles (Sidebar) --- */
+.profile-pic-container { position: relative; margin-right: 12px; flex-shrink: 0; }
+.status-dot { content: ''; position: absolute; bottom: 2px; right: 0px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--secondary-bg); background-color: var(--offline-color); }
+.contact-item.online .status-dot { background-color: var(--online-color); }
+.contact-item.offline .status-dot { background-color: var(--offline-color); }
+/* Hide dot if preferring text only */
+/* .status-dot { display: none; } */
 
 /* --- Chat Area Styles (`chat.html`) --- */
-.chat-area {
-    flex-grow: 1; /* Take remaining width */
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    /* --- Added Background Image --- */
-    background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
-    background-color: #e5ddd5; /* Fallback color if image fails */
-    background-repeat: repeat; /* Ensure the pattern tiles */
-    /* --- End Added Background --- */
-    position: relative; /* Keep relative positioning */
-}
-
-.chat-header {
-    display: flex;
-    align-items: center;
-    padding: 10px 15px;
-    background-color: var(--primary-bg); /* Header background stays solid */
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
-    position: relative; /* Ensure header stays above background */
-    z-index: 1;
-}
-
-.contact-profile {
-    display: flex;
-    align-items: center;
-    flex-grow: 1;
-    cursor: pointer;
-    overflow: hidden;
-}
-.contact-profile .placeholder {
-    color: var(--text-secondary);
-    font-style: italic;
-    margin-left: 10px;
-}
-
-/* Use same profile pic class as sidebar */
-.contact-profile .profile-pic {
-    width: 40px;
-    height: 40px;
-    margin-right: 12px; /* Consistent margin */
-}
-
-.contact-details {
-    margin-left: 0;
-    overflow: hidden;
-}
-.contact-details .contact-name {
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.contact-details .contact-status {
-    font-size: 0.8em;
-    color: var(--text-secondary);
-    white-space: nowrap;
-}
-
-.chat-actions {
-    display: flex;
-    gap: 10px; /* Adjust gap for remaining icons */
-    flex-shrink: 0;
-}
-.chat-actions button {
-    padding: 8px;
-}
-.chat-actions button i {
-    font-size: 1.2em;
-    color: var(--text-secondary);
-}
-
-.message-list {
-    flex-grow: 1;
-    overflow-y: auto;
-    padding: 20px 5%;
-    display: flex;
-    flex-direction: column;
-    position: relative; /* Keep messages above background */
-    z-index: 1;
-    background: transparent; /* Ensure message list background doesn't cover chat area background */
-}
-
-.message {
-    display: flex;
-    margin-bottom: 2px;
-    max-width: 75%;
-    align-items: flex-end;
-}
-.message + .message {
-    margin-top: 8px;
-}
-
-.message .profile-pic-small {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    margin-right: 8px;
-    margin-bottom: 5px;
-    background-color: #ccc;
-    flex-shrink: 0;
-    border: 1px solid var(--border-color);
-}
-
-.message.sent {
-    align-self: flex-end;
-}
-.message.received {
-    align-self: flex-start;
-}
-
-.message .bubble {
-    padding: 6px 12px;
-    border-radius: 8px;
-    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
-    position: relative;
-    word-wrap: break-word;
-}
-
-.message.sent .bubble {
-    background-color: var(--sent-bubble-bg);
-}
-
-.message.received .bubble {
-    background-color: var(--received-bubble-bg);
-}
-
-/* Grouping bubbles from same sender */
-.message.received + .message.received[data-sender-id]:not([data-sender-id=""]) {
-    margin-top: 2px;
-}
-.message.received + .message.received[data-sender-id]:not([data-sender-id=""]) .profile-pic-small {
-    visibility: hidden; /* Keep space but hide pic */
-}
-
-.message.sent + .message.sent {
-    margin-top: 2px;
-}
-
-.message .bubble p {
-    margin: 0;
-    margin-bottom: 15px; /* Space for timestamp */
-    white-space: pre-wrap;
-    line-height: 1.4;
-}
-
-.message-meta {
-    position: absolute;
-    bottom: 4px;
-    right: 8px;
-    font-size: 0.7em;
-    color: var(--text-secondary);
-    opacity: 0.8;
-    display: flex;
-    align-items: center;
-    line-height: 1;
-}
-
-.sender-name {
-    font-size: 0.8em;
-    font-weight: 500;
-    color: var(--primary-accent); /* Example color */
-    margin-bottom: 3px;
-}
-
-.status-ticks {
-    margin-left: 4px;
-    display: inline-block;
-}
-.status-ticks i {
-    font-size: 1em;
-    color: var(--text-secondary);
-}
-.status-ticks i.delivered {
-    color: var(--text-secondary);
-}
-.status-ticks i.read {
-    color: var(--link-color);
-}
-.fa-check-double::before {
-    position: relative;
-    left: -2px;
-}
-
+.chat-area { flex-grow: 1; display: flex; flex-direction: column; height: 100%; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); background-color: #e5ddd5; background-repeat: repeat; position: relative; }
+.chat-header { display: flex; align-items: center; padding: 10px 15px; background-color: var(--primary-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; position: relative; z-index: 1; }
+.contact-profile { display: flex; align-items: center; flex-grow: 1; cursor: pointer; overflow: hidden; }
+.contact-profile .placeholder { color: var(--text-secondary); font-style: italic; margin-left: 10px; }
+.contact-profile .profile-pic { width: 40px; height: 40px; margin-right: 12px; } /* Reuse class */
+.contact-details { margin-left: 0; overflow: hidden; }
+.contact-details .contact-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.contact-details .contact-status { font-size: 0.8em; color: var(--text-secondary); white-space: nowrap; }
+/* Chat Header Status Color */
+.contact-details .contact-status.online { color: var(--primary-accent); font-weight: 500; }
+.contact-details .contact-status.offline { color: var(--text-secondary); }
+.chat-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.chat-actions button { padding: 8px; }
+.chat-actions button i { font-size: 1.2em; color: var(--text-secondary); }
+.message-list { flex-grow: 1; overflow-y: auto; padding: 20px 5%; display: flex; flex-direction: column; position: relative; z-index: 1; background: transparent; }
+.message { display: flex; margin-bottom: 2px; max-width: 75%; align-items: flex-end; }
+.message + .message { margin-top: 8px; }
+.message .profile-pic-small { width: 28px; height: 28px; border-radius: 50%; margin-right: 8px; margin-bottom: 5px; background-color: #ccc; flex-shrink: 0; border: 1px solid var(--border-color); }
+.message.sent { align-self: flex-end; }
+.message.received { align-self: flex-start; }
+.message .bubble { padding: 6px 12px; border-radius: 8px; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08); position: relative; word-wrap: break-word; }
+.message.sent .bubble { background-color: var(--sent-bubble-bg); }
+.message.received .bubble { background-color: var(--received-bubble-bg); }
+.message.received + .message.received[data-sender-id]:not([data-sender-id=""]) { margin-top: 2px; }
+.message.received + .message.received[data-sender-id]:not([data-sender-id=""]) .profile-pic-small { visibility: hidden; }
+.message.sent + .message.sent { margin-top: 2px; }
+.message .bubble p { margin: 0; margin-bottom: 15px; white-space: pre-wrap; line-height: 1.4; }
+.message-meta { position: absolute; bottom: 4px; right: 8px; font-size: 0.7em; color: var(--text-secondary); opacity: 0.8; display: flex; align-items: center; line-height: 1; }
+.sender-name { font-size: 0.8em; font-weight: 500; color: var(--primary-accent); margin-bottom: 3px; }
+.status-ticks { margin-left: 4px; display: inline-block; }
+.status-ticks i { font-size: 1em; color: var(--text-secondary); }
+.status-ticks i.delivered { color: var(--text-secondary); }
+.status-ticks i.read { color: var(--link-color); }
+.fa-check-double::before { position: relative; left: -2px; }
 /* Typing Indicator */
-.typing-indicator {
-    padding: 5px 5%;
-    font-size: 0.85em;
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    height: 25px;
-    position: relative; /* Keep above background */
-    z-index: 1;
-     background: transparent; /* Ensure indicator doesn't cover chat area background */
-    flex-shrink: 0;
-}
-.typing-indicator span {
-    margin-right: 3px;
-}
-.typing-dot {
-    display: inline-block;
-    width: 5px;
-    height: 5px;
-    background-color: var(--text-secondary);
-    border-radius: 50%;
-    opacity: 0.6;
-    animation: typing 1.2s infinite ease-in-out;
-}
-.typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.typing-dot:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typing {
-    0%, 60%, 100% { transform: translateY(0); }
-    30% { transform: translateY(-4px); }
-}
-
+.typing-indicator { padding: 5px 5%; font-size: 0.85em; color: var(--text-secondary); display: flex; align-items: center; height: 25px; position: relative; z-index: 1; background: transparent; flex-shrink: 0; }
+.typing-indicator span { margin-right: 3px; }
+.typing-dot { display: inline-block; width: 5px; height: 5px; background-color: var(--text-secondary); border-radius: 50%; opacity: 0.6; animation: typing 1.2s infinite ease-in-out; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; } .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-4px); } }
 /* Message Input Area */
-.message-input-area {
-    display: flex;
-    align-items: center;
-    padding: 8px 10px; /* Reduced horizontal padding slightly */
-    background-color: var(--primary-bg); /* Footer background stays solid */
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
-    position: relative; /* Keep above background */
-    z-index: 1;
-}
-
-.message-input-area button {
-    padding: 8px;
-    margin: 0 5px;
-}
-
-.message-input-area button i {
-    font-size: 1.3em; /* Adjusted emoji/send icon size */
-    color: var(--text-secondary);
-}
-
-.message-input-area input {
-    flex-grow: 1;
-    margin: 0 5px; /* Margin between emoji and input, input and send */
-    border-radius: 20px;
-    background-color: var(--secondary-bg);
-    border: 1px solid var(--border-color);
-    height: 40px;
-    padding: 8px 15px;
-}
-
-#send-button i {
-     color: var(--primary-accent);
-}
+.message-input-area { display: flex; align-items: center; padding: 8px 10px; background-color: var(--primary-bg); border-top: 1px solid var(--border-color); flex-shrink: 0; position: relative; z-index: 1; }
+.message-input-area button { padding: 8px; margin: 0 5px; }
+.message-input-area button i { font-size: 1.3em; color: var(--text-secondary); }
+.message-input-area input { flex-grow: 1; margin: 0 5px; border-radius: 20px; background-color: var(--secondary-bg); border: 1px solid var(--border-color); height: 40px; padding: 8px 15px; }
+#send-button i { color: var(--primary-accent); }
 
 /* --- Scrollbar styles --- */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.3);
-}
-.contact-list, .message-list, .profile-page-container { /* Added profile page */
-    scrollbar-width: thin; /* Firefox */
-    scrollbar-color: rgba(0, 0, 0, 0.2) transparent; /* Firefox */
-}
+::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 3px; } ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.3); }
+.contact-list, .message-list, .profile-page-container { scrollbar-width: thin; scrollbar-color: rgba(0, 0, 0, 0.2) transparent; }
 
 /* --- Profile Page Styles (`profile.html`) --- */
-.profile-page-container {
-    width: 100%;
-    max-width: 600px;
-    margin: 20px auto;
-    padding: 20px 30px;
-    background-color: var(--secondary-bg); /* Ensure white background */
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.profile-header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 25px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.profile-header h2 {
-    flex-grow: 1;
-    text-align: center;
-    margin: 0;
-    color: var(--text-primary);
-}
-
-.back-button {
-    color: var(--text-secondary);
-    font-size: 1.3em;
-    text-decoration: none;
-    padding: 5px 10px 5px 0;
-}
-.back-button:hover {
-    color: var(--text-primary);
-}
-
-.profile-form {
-    display: flex;
-    flex-direction: column;
-}
-
-.profile-pic-section {
-    text-align: center;
-    margin-bottom: 25px;
-}
-
-.profile-pic-section label {
-    display: block;
-    margin-bottom: 10px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    font-size: 0.9em;
-}
-
-.profile-pic-large {
-    width: 150px;
-    height: 150px;
-    border-radius: 50%;
-    object-fit: cover;
-    margin: 0 auto;
-    border: 3px solid var(--border-color);
-    background-color: #eee;
-    display: block;
-}
-
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: 500;
-    font-size: 0.95em;
-}
-
-.form-group input[type="url"],
-.form-group input[type="text"] {
-    height: 42px;
-}
-
-#profile-form button[type="submit"] {
-    background-color: var(--primary-accent);
-    color: white;
-    padding: 12px 20px;
-    border-radius: 25px;
-    width: auto;
-    align-self: center;
-    min-width: 150px;
-    margin-top: 10px;
-    font-weight: bold;
-    border: none;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-#profile-form button[type="submit"]:hover {
-    background-color: var(--secondary-accent);
-}
-
-.save-confirmation {
-    text-align: center;
-    margin-top: 15px;
-    color: var(--success-color);
-    font-weight: 500;
-}
-#profile-pic-error { /* Error message specifically for profile pic URL */
-     margin-top: 8px;
-     font-size: 0.85em;
-}
-
+.profile-page-container { width: 100%; max-width: 600px; margin: 20px auto; padding: 20px 30px; background-color: var(--secondary-bg); border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
+.profile-header { display: flex; align-items: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }
+.profile-header h2 { flex-grow: 1; text-align: center; margin: 0; color: var(--text-primary); }
+.back-button { color: var(--text-secondary); font-size: 1.3em; text-decoration: none; padding: 5px 10px 5px 0; } .back-button:hover { color: var(--text-primary); }
+.profile-form { display: flex; flex-direction: column; }
+.profile-pic-section { text-align: center; margin-bottom: 25px; }
+.profile-pic-section label { display: block; margin-bottom: 10px; font-weight: 500; color: var(--text-secondary); font-size: 0.9em; }
+.profile-pic-large { width: 150px; height: 150px; border-radius: 50%; object-fit: cover; margin: 0 auto; border: 3px solid var(--border-color); background-color: #eee; display: block; }
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; margin-bottom: 5px; font-weight: 500; font-size: 0.95em; }
+.form-group input[type="url"], .form-group input[type="text"] { height: 42px; }
+#profile-form button[type="submit"] { background-color: var(--primary-accent); color: white; padding: 12px 20px; border-radius: 25px; width: auto; align-self: center; min-width: 150px; margin-top: 10px; font-weight: bold; border: none; cursor: pointer; transition: background-color 0.2s ease; }
+#profile-form button[type="submit"]:hover { background-color: var(--secondary-accent); }
+.save-confirmation { text-align: center; margin-top: 15px; color: var(--success-color); font-weight: 500; }
+#profile-pic-error { margin-top: 8px; font-size: 0.85em; }
+/* Connection status message on profile page */
+#connection-status { margin-top: 15px; font-weight: 500; font-size: 0.9em; }
 
 /* --- Responsive Adjustments --- */
 @media (max-width: 768px) {
-    body {
-        /* Only allow scroll if profile page might need it */
-         /* Adjust based on testing */
-    }
-    .chat-app-container {
-        width: 100vw;
-        height: 100vh;
-        max-width: none;
-        max-height: none;
-        border-radius: 0;
-        /* JS needed to toggle sidebar/chat view */
-    }
-
-    .profile-page-container {
-        margin: 0;
-        border-radius: 0;
-        box-shadow: none;
-        max-width: 100%;
-        padding: 15px;
-        height: 100vh;
-        overflow-y: auto; /* Allow profile page to scroll */
-         /* If profile page is active, ensure body doesn't scroll */
-         /* body:has(.profile-page-container) { overflow: hidden; } --- Needs JS check */
-    }
-     body.profile-active { /* Add this class via JS */
-        overflow: hidden;
-    }
-
-
-    .profile-pic-large {
-        width: 120px;
-        height: 120px;
-    }
-
-    #profile-form button[type="submit"] {
-        width: 100%;
-    }
-
-    /* Mobile view often shows one panel at a time in chat */
-     .sidebar {
-         width: 100%;
-         max-width: none;
-         border-right: none;
-         height: 100%;
-         /* Use JS to add/remove mobile-hidden */
-     }
-     .chat-area {
-         width: 100%;
-         height: 100%;
-         /* Use JS to add/remove mobile-hidden */
-     }
-
-     .sidebar.mobile-hidden { display: none !important; } /* Use important if needed */
+    body { /* Allow body scroll ONLY if profile page might need it */ /* overflow: auto; */ }
+    .chat-app-container { width: 100vw; height: 100vh; max-width: none; max-height: none; border-radius: 0; /* JS toggles panels */ }
+    .profile-page-container { margin: 0; border-radius: 0; box-shadow: none; max-width: 100%; padding: 15px; height: 100vh; overflow-y: auto; }
+    body.profile-active { overflow: hidden; } /* Prevent body scroll when profile page is 'active' */
+    .profile-pic-large { width: 120px; height: 120px; }
+    #profile-form button[type="submit"] { width: 100%; }
+    /* Mobile view panel toggling */
+     .sidebar { width: 100%; max-width: none; border-right: none; height: 100%; display: flex; /* Show sidebar by default? */ }
+     .chat-area { width: 100%; height: 100%; display: none; /* Hide chat area by default */ }
+     .sidebar.mobile-hidden { display: none !important; }
      .chat-area.mobile-hidden { display: none !important; }
-
-
-    .message {
-        max-width: 90%;
-    }
-    .message-list {
-        padding: 15px 3%;
-    }
-    .message-input-area {
-        padding: 8px 10px;
-    }
-
-     /* Mobile back button style - if added via JS */
-     #mobile-back-button {
-        margin-right: 10px;
-        border: none;
-        background: none;
-        color: var(--text-secondary);
-        font-size: 1.2em;
-        cursor: pointer;
-        padding: 8px; /* Make clickable area larger */
-     }
-
-}
-
-/* new */
-
-/* style.css - Add near .contact-item styles */
-
-.profile-pic-container { /* Optional: if you wrap img for status dot */
-    position: relative;
-    margin-right: 12px;
-    flex-shrink: 0;
-}
-
-/* Status indicator text (can be hidden if using dots) */
-.status-indicator {
-    font-size: 0.8em;
-    margin-left: 6px; /* Space after name */
-    /* display: none; */ /* Hide text if using dots */
-}
-.status-indicator.online {
-    color: var(--primary-accent);
-    font-weight: 500;
-}
-.status-indicator.offline {
-     color: var(--text-secondary);
-     /* display: none; */ /* Hide offline text? */
-}
-
-/* Alternative: Status Dot */
-.contact-item .profile-pic-container::after {
-    content: '';
-    position: absolute;
-    bottom: 2px;
-    right: 0px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 1px solid var(--secondary-bg); /* White border */
-    background-color: var(--text-secondary); /* Default offline color */
-}
-.contact-item.online .profile-pic-container::after {
-    background-color: #4ade80; /* Green for online */
-}
-.contact-item.offline .profile-pic-container::after {
-    background-color: #9ca3af; /* Grey for offline */
-}
-
-/* Chat Header Status */
-.contact-details .contact-status {
-    font-size: 0.8em;
-    color: var(--text-secondary);
-    white-space: nowrap;
-}
-.contact-details .contact-status.online {
-    color: var(--primary-accent);
-    font-weight: 500;
+     .chat-area:not(.mobile-hidden) { display: flex !important; } /* Ensure chat shows when class removed */
+    .message { max-width: 90%; }
+    .message-list { padding: 15px 3%; }
+    .message-input-area { padding: 8px 10px; }
+    #mobile-back-button { margin-right: 10px; border: none; background: none; color: var(--text-secondary); font-size: 1.2em; cursor: pointer; padding: 8px; flex-shrink: 0; order: -1; }
 }

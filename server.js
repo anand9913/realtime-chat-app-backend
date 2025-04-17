@@ -1,4 +1,4 @@
-// server.js - Complete Version with Presence & All Handlers Restored (April 17, 2025)
+// server.js - Complete, Updated & Verified Version (April 17, 2025)
 
 // --- Imports and Setup ---
 require('dotenv').config();
@@ -7,7 +7,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const admin = require('firebase-admin');
-const db = require('./db'); // Ensure db.js is correctly configured
+const db = require('./db'); // PostgreSQL connection module
 
 // --- Initialization ---
 const app = express();
@@ -37,10 +37,11 @@ app.use(express.json());
 // --- Routes ---
 app.get('/', (req, res) => res.redirect('/login.html'));
 
-// --- Helper Function to Get Contacts (for broadcasting presence) ---
+// --- Helper Function to Get Contacts UIDs (for broadcasting presence) ---
 async function getContactsOfUser(uid) {
     if (!uid) return [];
     try {
+         // Find UIDs of users who have the input UID listed as their contact
          const query = 'SELECT user_uid FROM contacts WHERE contact_uid = $1';
          const { rows } = await db.query(query, [uid]);
          return rows.map(row => row.user_uid);
@@ -55,7 +56,7 @@ async function getContactsOfUser(uid) {
 // ========================================
 io.on('connection', (socket) => {
     console.log(`Socket connected: ${socket.id}`);
-    socket.user = null; // User is initially unauthenticated
+    socket.user = null; // Attached after successful authentication
 
     // --- Authentication ---
     socket.on('authenticate', async (idToken) => {
@@ -164,8 +165,7 @@ io.on('connection', (socket) => {
         if (recipientUid === senderUid) return socket.emit('error', { message: 'Cannot send to self.' });
 
         console.log(`[MSG SEND] From ${senderUid} to ${recipientUid}: ${content.substring(0, 30)}...`);
-        // Log the db object to ensure pool is present
-        console.log('[MSG SEND] Checking db object before transaction:', db);
+        console.log('[MSG SEND] Checking db object before transaction:', db); // Debug log
         if (!db || !db.pool || typeof db.pool.connect !== 'function') {
              console.error('!!! [MSG SEND] CRITICAL: db.pool or db.pool.connect is invalid !!!', db);
              return socket.emit('error', { message: 'Internal server error: DB connection pool unavailable.' });
@@ -188,6 +188,7 @@ io.on('connection', (socket) => {
             }
 
             // 2. Save message to Database
+            // Ensure 'messages' table exists!
             const insertMsgQuery = `INSERT INTO messages (sender_uid, recipient_uid, content) VALUES ($1, $2, $3) RETURNING message_id, "timestamp", status`;
             const { rows } = await client.query(insertMsgQuery, [senderUid, recipientUid, content]);
             const savedMessage = rows[0]; if (!savedMessage) throw new Error("Msg save failed.");
@@ -198,8 +199,8 @@ io.on('connection', (socket) => {
             // 3. Emit message to recipient (include sender info)
             const messageForRecipient = {
                  id: savedMessage.message_id, sender: senderUid,
-                 senderName: socket.user.username || senderUid, // Current sender info
-                 senderPic: socket.user.profilePicUrl,
+                 senderName: socket.user.username || senderUid, // Current sender info from authenticated socket
+                 senderPic: socket.user.profilePicUrl, // Current sender info
                  content: content,
                  timestamp: savedMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
             };
@@ -215,7 +216,7 @@ io.on('connection', (socket) => {
             console.error(`!!! Specific Error Message: ${error.message}`);
             socket.emit('error', { message: 'Failed to send message. Server error occurred.' });
         } finally {
-            if (client) { console.log('[MSG SEND] Releasing DB client.'); client.release(); }
+            if (client) { console.log('[MSG SEND] Releasing DB client.'); client.release(); } // Always release client
         }
     }); // End 'sendMessage'
 
@@ -241,15 +242,60 @@ io.on('connection', (socket) => {
          const currentUserUid = socket.user.uid;
          console.log(`[CONTACTS] User ${currentUserUid} requesting contact list.`);
          try {
-              const query = `SELECT u.uid as id, u.username, u.profile_pic_url as "profilePicUrl", u.last_seen as "lastSeen" FROM users u JOIN contacts c ON u.uid = c.contact_uid WHERE c.user_uid = $1 ORDER BY u.username ASC;`;
+              // Fetch contacts with user details AND latest message info
+              const query = `
+                  SELECT
+                      u.uid as id,
+                      u.username,
+                      u.profile_pic_url as "profilePicUrl",
+                      u.last_seen as "lastSeen",
+                      lm.content as "lastMessage",
+                      lm.sender_uid as "lastMessageSenderUid",
+                      lm.timestamp as "lastMessageTimestamp"
+                  FROM contacts c
+                  JOIN users u ON u.uid = c.contact_uid
+                  LEFT JOIN LATERAL (
+                      SELECT content, sender_uid, timestamp
+                      FROM messages m
+                      WHERE (m.sender_uid = c.user_uid AND m.recipient_uid = c.contact_uid)
+                         OR (m.sender_uid = c.contact_uid AND m.recipient_uid = c.user_uid)
+                      ORDER BY m.timestamp DESC
+                      LIMIT 1
+                  ) lm ON true
+                  WHERE c.user_uid = $1
+                  ORDER BY lm.timestamp DESC NULLS LAST, u.username ASC;
+              `;
               const { rows } = await db.query(query, [currentUserUid]);
-              const contactsWithStatus = rows.map(contact => { // Add online status
+
+              // Add online status to each contact before sending
+              const contactsWithStatus = rows.map(contact => {
                   const isOnline = onlineUsers.has(contact.id) && onlineUsers.get(contact.id).size > 0;
-                  return { ...contact, status: isOnline ? 'online' : 'offline', lastSeen: isOnline ? null : contact.lastSeen };
+                  // Format last message preview
+                  let lastMessagePreview = contact.lastMessage || '';
+                  if (lastMessagePreview && contact.lastMessageSenderUid === currentUserUid) {
+                      lastMessagePreview = `You: ${lastMessagePreview}`;
+                  }
+                  // Format timestamp
+                  let formattedTimestamp = contact.lastMessageTimestamp ? contact.lastMessageTimestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+
+                  return {
+                      id: contact.id,
+                      username: contact.username,
+                      profilePicUrl: contact.profilePicUrl,
+                      lastSeen: isOnline ? null : contact.lastSeen, // Only needed if offline
+                      lastMessage: lastMessagePreview,
+                      timestamp: formattedTimestamp,
+                      status: isOnline ? 'online' : 'offline'
+                      // unread count needs separate logic later
+                  };
               });
-              console.log(`[CONTACTS] Sending ${contactsWithStatus.length} contacts with status for ${currentUserUid}`);
+
+              console.log(`[CONTACTS] Sending ${contactsWithStatus.length} contacts with details for ${currentUserUid}`);
               socket.emit('contactList', contactsWithStatus);
-         } catch (dbError) { console.error(`[CONTACTS] DB error fetching contacts for ${currentUserUid}:`, dbError); socket.emit('error', { message: 'Failed to load contacts.' }); }
+         } catch (dbError) {
+              console.error(`[CONTACTS] DB error fetching contacts for ${currentUserUid}:`, dbError);
+              socket.emit('error', { message: 'Failed to load contacts.' });
+         }
     }); // End 'getContacts'
 
     // --- User Search ---
@@ -269,7 +315,7 @@ io.on('connection', (socket) => {
 
     // --- Typing Indicators ---
     socket.on('typing', (data) => {
-        if (!socket.user) return; // Added auth check
+        if (!socket.user) return;
         const recipientUid = data?.recipientUid; if (!recipientUid) return;
         socket.to(recipientUid).emit('typingStatus', { senderUid: socket.user.uid, isTyping: data.isTyping === true });
     }); // End 'typing'
