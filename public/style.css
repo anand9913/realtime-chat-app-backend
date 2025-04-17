@@ -877,3 +877,58 @@ input:focus {
      }
 
 }
+
+/* new */
+
+/* style.css - Add near .contact-item styles */
+
+.profile-pic-container { /* Optional: if you wrap img for status dot */
+    position: relative;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+/* Status indicator text (can be hidden if using dots) */
+.status-indicator {
+    font-size: 0.8em;
+    margin-left: 6px; /* Space after name */
+    /* display: none; */ /* Hide text if using dots */
+}
+.status-indicator.online {
+    color: var(--primary-accent);
+    font-weight: 500;
+}
+.status-indicator.offline {
+     color: var(--text-secondary);
+     /* display: none; */ /* Hide offline text? */
+}
+
+/* Alternative: Status Dot */
+.contact-item .profile-pic-container::after {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    right: 0px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid var(--secondary-bg); /* White border */
+    background-color: var(--text-secondary); /* Default offline color */
+}
+.contact-item.online .profile-pic-container::after {
+    background-color: #4ade80; /* Green for online */
+}
+.contact-item.offline .profile-pic-container::after {
+    background-color: #9ca3af; /* Grey for offline */
+}
+
+/* Chat Header Status */
+.contact-details .contact-status {
+    font-size: 0.8em;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.contact-details .contact-status.online {
+    color: var(--primary-accent);
+    font-weight: 500;
+}

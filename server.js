@@ -1,32 +1,23 @@
-// server.js - Complete Version with Import & sendMessage Debug Logs (April 17, 2025)
+// server.js - Complete Version with Presence & All Handlers Restored (April 17, 2025)
 
 // --- Imports and Setup ---
-require('dotenv').config(); // Load .env variables
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const admin = require('firebase-admin'); // Firebase Admin SDK
-const db = require('./db'); // PostgreSQL connection module (ensure this path is correct)
-
-// *** ADDED Log right after import ***
-console.log("--- Server Start ---");
-console.log("server.js: Imported 'db' object:", db);
-// Check if pool exists right after import
-if (db && db.pool && typeof db.pool.connect === 'function') {
-    console.log("server.js: db.pool and db.pool.connect EXIST immediately after import.");
-} else {
-     console.error("!!! server.js: db.pool or db.pool.connect is MISSING immediately after import !!!", db);
-     // Consider exiting if DB module didn't load correctly
-     // process.exit(1);
-}
-// *** END ADDED Log ***
-
+const admin = require('firebase-admin');
+const db = require('./db'); // Ensure db.js is correctly configured
 
 // --- Initialization ---
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// --- In-Memory Presence Tracking ---
+// Map<uid: string, Set<socketId: string>>
+const onlineUsers = new Map();
+// ------------------------------------
 
 // --- Firebase Admin SDK Initialization ---
 try {
@@ -36,22 +27,35 @@ try {
     console.log("Firebase Admin SDK initialized successfully.");
 } catch (error) {
     console.error("!!! Firebase Admin SDK Initialization Failed !!!", error);
-    process.exit(1); // Critical error, exit
+    process.exit(1);
 }
 
 // --- Middleware ---
-app.use(express.static(path.join(__dirname, 'public'))); // Serve frontend files
-app.use(express.json()); // Parse JSON request bodies
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
 // --- Routes ---
-app.get('/', (req, res) => res.redirect('/login.html')); // Redirect root to login
+app.get('/', (req, res) => res.redirect('/login.html'));
+
+// --- Helper Function to Get Contacts (for broadcasting presence) ---
+async function getContactsOfUser(uid) {
+    if (!uid) return [];
+    try {
+         const query = 'SELECT user_uid FROM contacts WHERE contact_uid = $1';
+         const { rows } = await db.query(query, [uid]);
+         return rows.map(row => row.user_uid);
+    } catch (error) {
+         console.error(`[Presence Helper] Error fetching contacts FOR user ${uid}:`, error);
+         return [];
+    }
+}
 
 // ========================================
 // --- Socket.IO Event Handling ---
 // ========================================
 io.on('connection', (socket) => {
     console.log(`Socket connected: ${socket.id}`);
-    socket.user = null; // Attached after successful authentication
+    socket.user = null; // User is initially unauthenticated
 
     // --- Authentication ---
     socket.on('authenticate', async (idToken) => {
@@ -59,7 +63,7 @@ io.on('connection', (socket) => {
         if (!idToken) { socket.emit('authenticationFailed', { message: 'No token provided.' }); socket.disconnect(); return; }
 
         console.log(`[AUTH] Socket ${socket.id} attempting authentication...`);
-        let uid; // Define here for use in outer catch block
+        let uid;
         try {
             // 1. Verify Token
             const decodedToken = await admin.auth().verifyIdToken(idToken);
@@ -67,40 +71,65 @@ io.on('connection', (socket) => {
             if (!uid || !phoneNumber) throw new Error("Token missing UID/Phone.");
             console.log(`[AUTH] Token verified for UID: ${uid}`);
 
-            // 2. Database Interaction: Get or Create User, fetch profile
-            let userProfile = null; // Initialize profile object
+            // 2. Database Interaction & Profile Fetch
+            let userProfile = null;
             const upsertQuery = `INSERT INTO users (uid, phone_number, last_seen) VALUES ($1, $2, NOW()) ON CONFLICT (uid) DO UPDATE SET last_seen = NOW() RETURNING uid, username, profile_pic_url`;
             const selectQuery = 'SELECT uid, username, profile_pic_url FROM users WHERE uid = $1';
-
-            // Specific try/catch for DB operations
             try {
                 console.log(`[AUTH DB] Running upsertQuery for UID: ${uid}`);
                 const { rows } = await db.query(upsertQuery, [uid, phoneNumber]);
-                if (rows && rows.length > 0) {
-                     userProfile = rows[0]; console.log(`[AUTH DB] User processed via Upsert.`);
-                } else {
-                     console.warn(`[AUTH DB] Upsert RETURNING no rows for ${uid}. SELECTING.`);
-                     const selectResult = await db.query(selectQuery, [uid]);
-                     if (selectResult.rows && selectResult.rows.length > 0) { userProfile = selectResult.rows[0]; }
-                     else { throw new Error(`DB Error: User ${uid} not found.`); }
-                }
+                if (rows && rows.length > 0) { userProfile = rows[0]; console.log(`[AUTH DB] User processed via Upsert.`); }
+                else { console.warn(`[AUTH DB] Upsert RETURNING no rows for ${uid}. SELECTING.`); const selectResult = await db.query(selectQuery, [uid]); if (selectResult.rows && selectResult.rows.length > 0) { userProfile = selectResult.rows[0]; } else { throw new Error(`DB Error: User ${uid} not found.`); } }
                 if (!userProfile) throw new Error(`DB Error: Failed to get profile data for ${uid}.`);
                 console.log(`[AUTH DB] Fetched/Created Profile:`, { u: userProfile.username, p: userProfile.profile_pic_url });
-            } catch (dbError) { throw new Error(`Database error during login: ${dbError.message}`); } // Rethrow DB specific error
+            } catch (dbError) { throw new Error(`Database error during login: ${dbError.message}`); }
 
-            // 3. Assign data safely to socket object
-            console.log(`[AUTH STEP] Preparing to assign data to socket.user for ${uid}`);
+            // *** Start Presence Logic ***
+            const wasOffline = !onlineUsers.has(uid) || onlineUsers.get(uid).size === 0;
+            if (!onlineUsers.has(uid)) { onlineUsers.set(uid, new Set()); }
+            onlineUsers.get(uid).add(socket.id);
+            console.log(`[Presence] User ${uid} connected. Sockets: ${onlineUsers.get(uid).size}`);
+            // *** End Presence Logic Check ***
+
+            // 3. Assign data to socket
             socket.user = { uid: uid, phoneNumber: phoneNumber, username: userProfile.username ?? null, profilePicUrl: userProfile.profile_pic_url ?? null };
             console.log(`[AUTH STEP] Assigned data to socket.user:`, socket.user);
 
             // 4. Join Room
             socket.join(uid); console.log(`[AUTH STEP] Socket ${socket.id} joined room ${uid}.`);
 
-            // 5. Prepare and Emit Success Payload
+            // 5. Emit Success Payload
             const successPayload = { uid: socket.user.uid, phoneNumber: socket.user.phoneNumber, username: socket.user.username, profilePicUrl: socket.user.profilePicUrl };
             console.log(`[AUTH EMIT] Emitting 'authenticationSuccess' for ${uid}:`, JSON.stringify(successPayload));
             socket.emit('authenticationSuccess', successPayload);
             console.log(`[AUTH EMIT] 'authenticationSuccess' emitted successfully for ${uid}.`);
+
+            // *** Broadcast Online Status if First Connection ***
+            if (wasOffline) {
+                console.log(`[Presence] User ${uid} came online. Notifying contacts.`);
+                const contactUids = await getContactsOfUser(uid);
+                const presencePayload = { userId: uid, status: 'online' };
+                 console.log(`[Presence] Broadcasting 'online' for ${uid} to ${contactUids.length} contacts.`);
+                 contactUids.forEach(contactUid => { io.to(contactUid).emit('presenceUpdate', presencePayload); });
+            }
+            // *** End Broadcast ***
+
+            // *** Send Initial Presence Status of Contacts TO This Client ***
+             const contactsForClient = await getContactsOfUser(uid);
+             const initialPresence = {};
+             const userDetailsQuery = 'SELECT uid, last_seen FROM users WHERE uid = ANY($1::varchar[])';
+             if (contactsForClient.length > 0) {
+                  try {
+                       const { rows: userDetails } = await db.query(userDetailsQuery, [contactsForClient]);
+                       userDetails.forEach(u => {
+                           const isOnline = onlineUsers.has(u.uid) && onlineUsers.get(u.uid).size > 0;
+                           initialPresence[u.uid] = { status: isOnline ? 'online' : 'offline', lastSeen: isOnline ? null : u.last_seen };
+                       });
+                  } catch (dbErr) { console.error("[Presence] Error fetching contact details for initial status:", dbErr); }
+             }
+             console.log(`[Presence] Sending initial status for ${Object.keys(initialPresence).length} contacts to ${uid}`);
+             socket.emit('initialPresenceStatus', initialPresence);
+             // *** End Initial Presence Status ***
 
         } catch (error) { // Catch token verify errors or rethrown DB errors
             let clientErrorMessage = 'Auth failed.'; if (error.code === 'auth/id-token-expired' || error.message.includes('expired')) { clientErrorMessage = 'Session expired. Login again.'; } console.error(`!!! Socket ${socket.id} Auth Failed !!! UID: ${uid || 'unknown'}. Error:`, error.message); socket.emit('authenticationFailed', { message: clientErrorMessage }); socket.disconnect();
@@ -135,19 +164,17 @@ io.on('connection', (socket) => {
         if (recipientUid === senderUid) return socket.emit('error', { message: 'Cannot send to self.' });
 
         console.log(`[MSG SEND] From ${senderUid} to ${recipientUid}: ${content.substring(0, 30)}...`);
-
-        // *** ADDED Debug Log and Check ***
+        // Log the db object to ensure pool is present
         console.log('[MSG SEND] Checking db object before transaction:', db);
         if (!db || !db.pool || typeof db.pool.connect !== 'function') {
              console.error('!!! [MSG SEND] CRITICAL: db.pool or db.pool.connect is invalid !!!', db);
              return socket.emit('error', { message: 'Internal server error: DB connection pool unavailable.' });
         }
-        // *** End Debug Log and Check ***
 
         let client = null; // DB client for transaction
         try {
             console.log('[MSG SEND] Attempting to get DB client from pool...');
-            client = await db.pool.connect(); // This line caused the previous error
+            client = await db.pool.connect();
             console.log('[MSG SEND] DB client acquired. Beginning transaction...');
             await client.query('BEGIN');
 
@@ -161,7 +188,6 @@ io.on('connection', (socket) => {
             }
 
             // 2. Save message to Database
-            // Ensure 'messages' table exists!
             const insertMsgQuery = `INSERT INTO messages (sender_uid, recipient_uid, content) VALUES ($1, $2, $3) RETURNING message_id, "timestamp", status`;
             const { rows } = await client.query(insertMsgQuery, [senderUid, recipientUid, content]);
             const savedMessage = rows[0]; if (!savedMessage) throw new Error("Msg save failed.");
@@ -183,14 +209,13 @@ io.on('connection', (socket) => {
             // 4. Send confirmation back to sender
              socket.emit('messageSentConfirmation', { tempId: tempId || null, dbId: savedMessage.message_id, timestamp: savedMessage.timestamp, status: savedMessage.status });
 
-        } catch (error) { // Catch DB errors or other errors in the block
+        } catch (error) {
             if (client) { console.error('[MSG SEND] Rolling back transaction due to error.'); await client.query('ROLLBACK'); }
-            // Log the specific error that occurred
             console.error(`!!! [MSG SEND] Error processing message from ${senderUid} to ${recipientUid} !!!`, error);
             console.error(`!!! Specific Error Message: ${error.message}`);
             socket.emit('error', { message: 'Failed to send message. Server error occurred.' });
         } finally {
-            if (client) { console.log('[MSG SEND] Releasing DB client.'); client.release(); } // Always release client
+            if (client) { console.log('[MSG SEND] Releasing DB client.'); client.release(); }
         }
     }); // End 'sendMessage'
 
@@ -218,8 +243,12 @@ io.on('connection', (socket) => {
          try {
               const query = `SELECT u.uid as id, u.username, u.profile_pic_url as "profilePicUrl", u.last_seen as "lastSeen" FROM users u JOIN contacts c ON u.uid = c.contact_uid WHERE c.user_uid = $1 ORDER BY u.username ASC;`;
               const { rows } = await db.query(query, [currentUserUid]);
-              console.log(`[CONTACTS] Sending ${rows.length} contacts for user ${currentUserUid}`);
-              socket.emit('contactList', rows);
+              const contactsWithStatus = rows.map(contact => { // Add online status
+                  const isOnline = onlineUsers.has(contact.id) && onlineUsers.get(contact.id).size > 0;
+                  return { ...contact, status: isOnline ? 'online' : 'offline', lastSeen: isOnline ? null : contact.lastSeen };
+              });
+              console.log(`[CONTACTS] Sending ${contactsWithStatus.length} contacts with status for ${currentUserUid}`);
+              socket.emit('contactList', contactsWithStatus);
          } catch (dbError) { console.error(`[CONTACTS] DB error fetching contacts for ${currentUserUid}:`, dbError); socket.emit('error', { message: 'Failed to load contacts.' }); }
     }); // End 'getContacts'
 
@@ -240,7 +269,7 @@ io.on('connection', (socket) => {
 
     // --- Typing Indicators ---
     socket.on('typing', (data) => {
-        if (!socket.user) return;
+        if (!socket.user) return; // Added auth check
         const recipientUid = data?.recipientUid; if (!recipientUid) return;
         socket.to(recipientUid).emit('typingStatus', { senderUid: socket.user.uid, isTyping: data.isTyping === true });
     }); // End 'typing'
@@ -249,10 +278,26 @@ io.on('connection', (socket) => {
     socket.on('disconnect', async (reason) => {
         console.log(`Socket disconnected: ${socket.id}, Reason: ${reason}`);
         if (socket.user) {
-            const uid = socket.user.uid; console.log(`User ${uid} disconnected.`);
-            try { await db.query('UPDATE users SET last_seen = NOW() WHERE uid = $1', [uid]); console.log(`Updated last_seen for ${uid}.`); }
-            catch (dbError) { console.error(`Failed to update last_seen for ${uid}:`, dbError); }
-            // TODO: Broadcast 'offline' presence update
+            const uid = socket.user.uid;
+            let wasLastConnection = false; let lastSeenTimestamp = null;
+            // Presence Update
+            if (onlineUsers.has(uid)) {
+                 const userSockets = onlineUsers.get(uid); userSockets.delete(socket.id);
+                 console.log(`[Presence] Socket ${socket.id} removed for user ${uid}. Remaining: ${userSockets.size}`);
+                 if (userSockets.size === 0) { onlineUsers.delete(uid); wasLastConnection = true; console.log(`[Presence] User ${uid} went offline.`); }
+            } else { console.warn(`[Presence] Disconnected socket ${socket.id} for user ${uid} not in onlineUsers map.`); }
+            // Update DB last_seen
+            try {
+                const { rows } = await db.query('UPDATE users SET last_seen = NOW() WHERE uid = $1 RETURNING last_seen', [uid]);
+                lastSeenTimestamp = rows[0]?.last_seen; console.log(`Updated last_seen for ${uid}.`);
+            } catch (dbError) { console.error(`Failed to update last_seen for ${uid}:`, dbError); lastSeenTimestamp = new Date(); }
+            // Broadcast offline status if it was the last connection
+            if (wasLastConnection) {
+                const contactUids = await getContactsOfUser(uid);
+                const presencePayload = { userId: uid, status: 'offline', lastSeen: lastSeenTimestamp };
+                console.log(`[Presence] Notifying ${contactUids.length} contacts that ${uid} went offline.`);
+                contactUids.forEach(contactUid => { io.to(contactUid).emit('presenceUpdate', presencePayload); });
+            }
         }
     }); // End 'disconnect'
 
@@ -269,5 +314,5 @@ server.listen(PORT, () => {
 });
 server.on('error', (error) => {
     console.error('!!! Server Error !!!:', error);
-    process.exit(1); // Exit on critical server startup errors
+    process.exit(1);
 });
