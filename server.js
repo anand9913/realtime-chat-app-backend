@@ -1,4 +1,4 @@
-// server.js - Complete Refined Version (April 17, 2025)
+// server.js - Complete Version with sendMessage Debugging (April 17, 2025)
 
 // --- Imports and Setup ---
 require('dotenv').config(); // Load .env variables
@@ -7,15 +7,12 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const admin = require('firebase-admin'); // Firebase Admin SDK
-const db = require('./db'); // PostgreSQL connection module
+const db = require('./db'); // PostgreSQL connection module (ensure this path is correct)
 
 // --- Initialization ---
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-    // Optional: Configure transports, timeouts etc. if needed
-    // transports: ['websocket', 'polling'],
-});
+const io = new Server(server);
 
 // --- Firebase Admin SDK Initialization ---
 try {
@@ -48,54 +45,36 @@ io.on('connection', (socket) => {
         if (!idToken) { socket.emit('authenticationFailed', { message: 'No token provided.' }); socket.disconnect(); return; }
 
         console.log(`[AUTH] Socket ${socket.id} attempting authentication...`);
-        let uid; // Define here for use in catch blocks
+        let uid;
         try {
-            // 1. Verify Token
             const decodedToken = await admin.auth().verifyIdToken(idToken);
             uid = decodedToken.uid; const phoneNumber = decodedToken.phone_number;
             if (!uid || !phoneNumber) throw new Error("Token missing UID/Phone.");
             console.log(`[AUTH] Token verified for UID: ${uid}`);
 
-            // 2. DB Upsert/Select User & Get Profile
             let userProfile = null;
             const upsertQuery = `INSERT INTO users (uid, phone_number, last_seen) VALUES ($1, $2, NOW()) ON CONFLICT (uid) DO UPDATE SET last_seen = NOW() RETURNING uid, username, profile_pic_url`;
             const selectQuery = 'SELECT uid, username, profile_pic_url FROM users WHERE uid = $1';
             try {
                 console.log(`[AUTH DB] Running upsertQuery for UID: ${uid}`);
                 const { rows } = await db.query(upsertQuery, [uid, phoneNumber]);
-                if (rows && rows.length > 0) {
-                     userProfile = rows[0]; console.log(`[AUTH DB] User processed via Upsert.`);
-                } else { // Fallback SELECT (should be rare)
-                     console.warn(`[AUTH DB] Upsert RETURNING no rows for ${uid}. SELECTING.`);
-                     const selectResult = await db.query(selectQuery, [uid]);
-                     if (selectResult.rows && selectResult.rows.length > 0) { userProfile = selectResult.rows[0]; }
-                     else { throw new Error(`DB Consistency Error: User ${uid} not found.`); }
-                }
+                if (rows && rows.length > 0) { userProfile = rows[0]; console.log(`[AUTH DB] User processed via Upsert.`); }
+                else { console.warn(`[AUTH DB] Upsert RETURNING no rows for ${uid}. SELECTING.`); const selectResult = await db.query(selectQuery, [uid]); if (selectResult.rows && selectResult.rows.length > 0) { userProfile = selectResult.rows[0]; } else { throw new Error(`DB Error: User ${uid} not found.`); } }
                 if (!userProfile) throw new Error(`DB Error: Failed to get profile data for ${uid}.`);
                 console.log(`[AUTH DB] Fetched/Created Profile:`, { u: userProfile.username, p: userProfile.profile_pic_url });
-            } catch (dbError) { throw new Error(`Database error during login: ${dbError.message}`); } // Rethrow DB specific error
+            } catch (dbError) { throw new Error(`Database error during login: ${dbError.message}`); }
 
-            // 3. Assign data to socket
             socket.user = { uid: uid, phoneNumber: phoneNumber, username: userProfile.username ?? null, profilePicUrl: userProfile.profile_pic_url ?? null };
             console.log(`[AUTH STEP] Assigned data to socket.user:`, socket.user);
-
-            // 4. Join Room
             socket.join(uid); console.log(`[AUTH STEP] Socket ${socket.id} joined room ${uid}.`);
 
-            // 5. Emit Success
             const successPayload = { uid: socket.user.uid, phoneNumber: socket.user.phoneNumber, username: socket.user.username, profilePicUrl: socket.user.profilePicUrl };
             console.log(`[AUTH EMIT] Emitting 'authenticationSuccess' for ${uid}:`, JSON.stringify(successPayload));
             socket.emit('authenticationSuccess', successPayload);
             console.log(`[AUTH EMIT] 'authenticationSuccess' emitted successfully for ${uid}.`);
 
-        } catch (error) { // Catch token verify errors or rethrown DB errors
-            let clientErrorMessage = 'Authentication failed. Please try again.';
-            if (error.code === 'auth/id-token-expired' || error.message.includes('expired')) {
-                 console.warn(`!!! Socket ${socket.id} Auth Failed: Expired Token !!! UID: ${uid || 'unknown'}`);
-                 clientErrorMessage = 'Your session has expired. Please log in again.';
-            } else { console.error(`!!! Socket ${socket.id} Auth Failed Overall !!! UID: ${uid || 'unknown'}. Error:`, error.message); }
-            socket.emit('authenticationFailed', { message: clientErrorMessage });
-            socket.disconnect();
+        } catch (error) {
+            let clientErrorMessage = 'Auth failed.'; if (error.code === 'auth/id-token-expired' || error.message.includes('expired')) { clientErrorMessage = 'Session expired. Login again.'; } console.error(`!!! Socket ${socket.id} Auth Failed !!! UID: ${uid || 'unknown'}. Error:`, error.message); socket.emit('authenticationFailed', { message: clientErrorMessage }); socket.disconnect();
         }
     }); // End 'authenticate'
 
@@ -107,7 +86,6 @@ io.on('connection', (socket) => {
         const trimmedUsername = username.trim(); const trimmedPicUrl = profilePicUrl.trim();
         if (trimmedUsername.length === 0) return socket.emit('profileUpdateError', { message: 'Username empty.' });
         if (trimmedUsername.length > 50) return socket.emit('profileUpdateError', { message: 'Username too long.' });
-
         console.log(`[PROFILE UPDATE] User ${uid} updating: U='${trimmedUsername}', P='${trimmedPicUrl}'`);
         try {
             const query = 'UPDATE users SET username = $1, profile_pic_url = $2 WHERE uid = $3 RETURNING username, profile_pic_url';
@@ -116,10 +94,7 @@ io.on('connection', (socket) => {
                 const updatedProfile = rows[0]; socket.user.username = updatedProfile.username; socket.user.profilePicUrl = updatedProfile.profile_pic_url;
                 socket.emit('profileUpdateSuccess', { username: updatedProfile.username, profilePicUrl: updatedProfile.profile_pic_url }); console.log(`[PROFILE UPDATE] Success for ${uid}`);
             } else { socket.emit('profileUpdateError', { message: 'User not found?' }); }
-        } catch (dbError) {
-            console.error(`[PROFILE UPDATE] DB Error for ${uid}:`, dbError);
-            socket.emit('profileUpdateError', { message: 'DB error saving profile.' });
-        }
+        } catch (dbError) { console.error(`[PROFILE UPDATE] DB Error for ${uid}:`, dbError); socket.emit('profileUpdateError', { message: 'DB error.' }); }
     }); // End 'updateProfile'
 
     // --- Send Message ---
@@ -131,12 +106,24 @@ io.on('connection', (socket) => {
         if (recipientUid === senderUid) return socket.emit('error', { message: 'Cannot send to self.' });
 
         console.log(`[MSG SEND] From ${senderUid} to ${recipientUid}: ${content.substring(0, 30)}...`);
+
+        // *** ADDED Debug Log and Check ***
+        console.log('[MSG SEND] Checking db object before transaction:', db);
+        if (!db || !db.pool || typeof db.pool.connect !== 'function') {
+             console.error('!!! [MSG SEND] CRITICAL: db.pool or db.pool.connect is invalid !!!', db);
+             // Send error back to client, do not proceed
+              return socket.emit('error', { message: 'Internal server error: DB connection pool unavailable.' });
+        }
+        // *** End Debug Log and Check ***
+
         let client = null; // DB client for transaction
         try {
-            client = await db.pool.connect(); await client.query('BEGIN'); // Start transaction
+            console.log('[MSG SEND] Attempting to get DB client from pool...');
+            client = await db.pool.connect(); // This line caused the previous error
+            console.log('[MSG SEND] DB client acquired. Beginning transaction...');
+            await client.query('BEGIN');
 
             // 1. Add contact relationship if first message
-            // Check only one way, as INSERT adds both ways
             const checkContactQuery = 'SELECT 1 FROM contacts WHERE user_uid = $1 AND contact_uid = $2 LIMIT 1';
             const { rowCount } = await client.query(checkContactQuery, [senderUid, recipientUid]);
             if (rowCount === 0) {
@@ -146,7 +133,7 @@ io.on('connection', (socket) => {
             }
 
             // 2. Save message to Database
-            // Ensure 'messages' table exists with correct columns!
+            // Ensure 'messages' table exists!
             const insertMsgQuery = `INSERT INTO messages (sender_uid, recipient_uid, content) VALUES ($1, $2, $3) RETURNING message_id, "timestamp", status`;
             const { rows } = await client.query(insertMsgQuery, [senderUid, recipientUid, content]);
             const savedMessage = rows[0]; if (!savedMessage) throw new Error("Msg save failed.");
@@ -159,7 +146,7 @@ io.on('connection', (socket) => {
                  id: savedMessage.message_id, sender: senderUid,
                  senderName: socket.user.username || senderUid, // Current sender info
                  senderPic: socket.user.profilePicUrl,
-                 content: content, // Send the trimmed content back
+                 content: content,
                  timestamp: savedMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
             };
             io.to(recipientUid).emit('receiveMessage', messageForRecipient);
@@ -168,13 +155,14 @@ io.on('connection', (socket) => {
             // 4. Send confirmation back to sender
              socket.emit('messageSentConfirmation', { tempId: tempId || null, dbId: savedMessage.message_id, timestamp: savedMessage.timestamp, status: savedMessage.status });
 
-        } catch (error) { // Catch DB errors or other errors in the block
+        } catch (error) {
             if (client) {
                  console.error('[MSG SEND] Rolling back transaction due to error.');
                  await client.query('ROLLBACK');
             }
+            // Log the specific error that occurred
             console.error(`!!! [MSG SEND] Error processing message from ${senderUid} to ${recipientUid} !!!`, error);
-            console.error(`!!! Specific Error Message: ${error.message}`);
+            console.error(`!!! Specific Error Message: ${error.message}`); // Log the message property
             socket.emit('error', { message: 'Failed to send message. Server error occurred.' });
         } finally {
             if (client) {
@@ -185,7 +173,6 @@ io.on('connection', (socket) => {
     }); // End 'sendMessage'
 
     // --- Get Chat History ---
-    // Requires 'messages' table
     socket.on('getChatHistory', async (data) => {
         if (!socket.user) return socket.emit('error', { message: 'Auth required.' });
         const currentUserUid = socket.user.uid; const otherUserUid = data?.chatId;
@@ -198,29 +185,20 @@ io.on('connection', (socket) => {
             const history = rows.map(msg => ({ ...msg, timestamp: msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) })).reverse();
             console.log(`[HISTORY] Sending ${history.length} messages for chat ${currentUserUid}<->${otherUserUid}`);
             socket.emit('chatHistory', { chatId: otherUserUid, messages: history });
-        } catch (dbError) {
-            console.error(`[HISTORY] DB error for ${currentUserUid}<->${otherUserUid}:`, dbError);
-            socket.emit('error', { message: 'Failed to load history.' });
-        }
+        } catch (dbError) { console.error(`[HISTORY] DB error for ${currentUserUid}<->${otherUserUid}:`, dbError); socket.emit('error', { message: 'Failed to load history.' }); }
     }); // End 'getChatHistory'
 
     // --- Get Contact List ---
-    // Requires 'contacts' and 'users' tables
     socket.on('getContacts', async () => {
          if (!socket.user) return socket.emit('error', { message: 'Auth required.' });
          const currentUserUid = socket.user.uid;
          console.log(`[CONTACTS] User ${currentUserUid} requesting contact list.`);
          try {
-              // TODO: Add last message info later
               const query = `SELECT u.uid as id, u.username, u.profile_pic_url as "profilePicUrl", u.last_seen as "lastSeen" FROM users u JOIN contacts c ON u.uid = c.contact_uid WHERE c.user_uid = $1 ORDER BY u.username ASC;`;
               const { rows } = await db.query(query, [currentUserUid]);
               console.log(`[CONTACTS] Sending ${rows.length} contacts for user ${currentUserUid}`);
-              // TODO: Add online status from an in-memory map if implementing presence
               socket.emit('contactList', rows);
-         } catch (dbError) {
-              console.error(`[CONTACTS] DB error fetching contacts for ${currentUserUid}:`, dbError);
-              socket.emit('error', { message: 'Failed to load contacts.' });
-         }
+         } catch (dbError) { console.error(`[CONTACTS] DB error fetching contacts for ${currentUserUid}:`, dbError); socket.emit('error', { message: 'Failed to load contacts.' }); }
     }); // End 'getContacts'
 
     // --- User Search ---
@@ -240,9 +218,8 @@ io.on('connection', (socket) => {
 
     // --- Typing Indicators ---
     socket.on('typing', (data) => {
-        if (!socket.user) return;
+        if (!socket.user) return; // Added auth check here for consistency
         const recipientUid = data?.recipientUid; if (!recipientUid) return;
-        // Emit only to the recipient, not back to the sender
         socket.to(recipientUid).emit('typingStatus', { senderUid: socket.user.uid, isTyping: data.isTyping === true });
     }); // End 'typing'
 
@@ -251,15 +228,13 @@ io.on('connection', (socket) => {
         console.log(`Socket disconnected: ${socket.id}, Reason: ${reason}`);
         if (socket.user) {
             const uid = socket.user.uid; console.log(`User ${uid} disconnected.`);
-            try { // Update last_seen
-                await db.query('UPDATE users SET last_seen = NOW() WHERE uid = $1', [uid]);
-                console.log(`Updated last_seen for ${uid}.`);
-            } catch (dbError) { console.error(`Failed to update last_seen for ${uid}:`, dbError); }
-            // TODO: Broadcast 'offline' presence update to contacts
+            try { await db.query('UPDATE users SET last_seen = NOW() WHERE uid = $1', [uid]); console.log(`Updated last_seen for ${uid}.`); }
+            catch (dbError) { console.error(`Failed to update last_seen for ${uid}:`, dbError); }
+            // TODO: Broadcast 'offline' presence update
         }
     }); // End 'disconnect'
 
-    // Handle low-level connection errors
+    // --- Low-level errors ---
     socket.on('connect_error', (err) => { console.error(`Socket ${socket.id} connect_error: ${err.message}`); });
 
 }); // End io.on('connection')
@@ -272,5 +247,5 @@ server.listen(PORT, () => {
 });
 server.on('error', (error) => {
     console.error('!!! Server Error !!!:', error);
-    process.exit(1); // Exit on critical server startup errors
+    process.exit(1);
 });
