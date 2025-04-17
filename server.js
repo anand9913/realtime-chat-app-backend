@@ -1,4 +1,4 @@
-// server.js - Complete Version with sendMessage Debugging (April 17, 2025)
+// server.js - Complete Version with Import & sendMessage Debug Logs (April 17, 2025)
 
 // --- Imports and Setup ---
 require('dotenv').config(); // Load .env variables
@@ -8,6 +8,20 @@ const { Server } = require('socket.io');
 const path = require('path');
 const admin = require('firebase-admin'); // Firebase Admin SDK
 const db = require('./db'); // PostgreSQL connection module (ensure this path is correct)
+
+// *** ADDED Log right after import ***
+console.log("--- Server Start ---");
+console.log("server.js: Imported 'db' object:", db);
+// Check if pool exists right after import
+if (db && db.pool && typeof db.pool.connect === 'function') {
+    console.log("server.js: db.pool and db.pool.connect EXIST immediately after import.");
+} else {
+     console.error("!!! server.js: db.pool or db.pool.connect is MISSING immediately after import !!!", db);
+     // Consider exiting if DB module didn't load correctly
+     // process.exit(1);
+}
+// *** END ADDED Log ***
+
 
 // --- Initialization ---
 const app = express();
@@ -45,35 +59,50 @@ io.on('connection', (socket) => {
         if (!idToken) { socket.emit('authenticationFailed', { message: 'No token provided.' }); socket.disconnect(); return; }
 
         console.log(`[AUTH] Socket ${socket.id} attempting authentication...`);
-        let uid;
+        let uid; // Define here for use in outer catch block
         try {
+            // 1. Verify Token
             const decodedToken = await admin.auth().verifyIdToken(idToken);
             uid = decodedToken.uid; const phoneNumber = decodedToken.phone_number;
             if (!uid || !phoneNumber) throw new Error("Token missing UID/Phone.");
             console.log(`[AUTH] Token verified for UID: ${uid}`);
 
-            let userProfile = null;
+            // 2. Database Interaction: Get or Create User, fetch profile
+            let userProfile = null; // Initialize profile object
             const upsertQuery = `INSERT INTO users (uid, phone_number, last_seen) VALUES ($1, $2, NOW()) ON CONFLICT (uid) DO UPDATE SET last_seen = NOW() RETURNING uid, username, profile_pic_url`;
             const selectQuery = 'SELECT uid, username, profile_pic_url FROM users WHERE uid = $1';
+
+            // Specific try/catch for DB operations
             try {
                 console.log(`[AUTH DB] Running upsertQuery for UID: ${uid}`);
                 const { rows } = await db.query(upsertQuery, [uid, phoneNumber]);
-                if (rows && rows.length > 0) { userProfile = rows[0]; console.log(`[AUTH DB] User processed via Upsert.`); }
-                else { console.warn(`[AUTH DB] Upsert RETURNING no rows for ${uid}. SELECTING.`); const selectResult = await db.query(selectQuery, [uid]); if (selectResult.rows && selectResult.rows.length > 0) { userProfile = selectResult.rows[0]; } else { throw new Error(`DB Error: User ${uid} not found.`); } }
+                if (rows && rows.length > 0) {
+                     userProfile = rows[0]; console.log(`[AUTH DB] User processed via Upsert.`);
+                } else {
+                     console.warn(`[AUTH DB] Upsert RETURNING no rows for ${uid}. SELECTING.`);
+                     const selectResult = await db.query(selectQuery, [uid]);
+                     if (selectResult.rows && selectResult.rows.length > 0) { userProfile = selectResult.rows[0]; }
+                     else { throw new Error(`DB Error: User ${uid} not found.`); }
+                }
                 if (!userProfile) throw new Error(`DB Error: Failed to get profile data for ${uid}.`);
                 console.log(`[AUTH DB] Fetched/Created Profile:`, { u: userProfile.username, p: userProfile.profile_pic_url });
-            } catch (dbError) { throw new Error(`Database error during login: ${dbError.message}`); }
+            } catch (dbError) { throw new Error(`Database error during login: ${dbError.message}`); } // Rethrow DB specific error
 
+            // 3. Assign data safely to socket object
+            console.log(`[AUTH STEP] Preparing to assign data to socket.user for ${uid}`);
             socket.user = { uid: uid, phoneNumber: phoneNumber, username: userProfile.username ?? null, profilePicUrl: userProfile.profile_pic_url ?? null };
             console.log(`[AUTH STEP] Assigned data to socket.user:`, socket.user);
+
+            // 4. Join Room
             socket.join(uid); console.log(`[AUTH STEP] Socket ${socket.id} joined room ${uid}.`);
 
+            // 5. Prepare and Emit Success Payload
             const successPayload = { uid: socket.user.uid, phoneNumber: socket.user.phoneNumber, username: socket.user.username, profilePicUrl: socket.user.profilePicUrl };
             console.log(`[AUTH EMIT] Emitting 'authenticationSuccess' for ${uid}:`, JSON.stringify(successPayload));
             socket.emit('authenticationSuccess', successPayload);
             console.log(`[AUTH EMIT] 'authenticationSuccess' emitted successfully for ${uid}.`);
 
-        } catch (error) {
+        } catch (error) { // Catch token verify errors or rethrown DB errors
             let clientErrorMessage = 'Auth failed.'; if (error.code === 'auth/id-token-expired' || error.message.includes('expired')) { clientErrorMessage = 'Session expired. Login again.'; } console.error(`!!! Socket ${socket.id} Auth Failed !!! UID: ${uid || 'unknown'}. Error:`, error.message); socket.emit('authenticationFailed', { message: clientErrorMessage }); socket.disconnect();
         }
     }); // End 'authenticate'
@@ -111,8 +140,7 @@ io.on('connection', (socket) => {
         console.log('[MSG SEND] Checking db object before transaction:', db);
         if (!db || !db.pool || typeof db.pool.connect !== 'function') {
              console.error('!!! [MSG SEND] CRITICAL: db.pool or db.pool.connect is invalid !!!', db);
-             // Send error back to client, do not proceed
-              return socket.emit('error', { message: 'Internal server error: DB connection pool unavailable.' });
+             return socket.emit('error', { message: 'Internal server error: DB connection pool unavailable.' });
         }
         // *** End Debug Log and Check ***
 
@@ -155,20 +183,14 @@ io.on('connection', (socket) => {
             // 4. Send confirmation back to sender
              socket.emit('messageSentConfirmation', { tempId: tempId || null, dbId: savedMessage.message_id, timestamp: savedMessage.timestamp, status: savedMessage.status });
 
-        } catch (error) {
-            if (client) {
-                 console.error('[MSG SEND] Rolling back transaction due to error.');
-                 await client.query('ROLLBACK');
-            }
+        } catch (error) { // Catch DB errors or other errors in the block
+            if (client) { console.error('[MSG SEND] Rolling back transaction due to error.'); await client.query('ROLLBACK'); }
             // Log the specific error that occurred
             console.error(`!!! [MSG SEND] Error processing message from ${senderUid} to ${recipientUid} !!!`, error);
-            console.error(`!!! Specific Error Message: ${error.message}`); // Log the message property
+            console.error(`!!! Specific Error Message: ${error.message}`);
             socket.emit('error', { message: 'Failed to send message. Server error occurred.' });
         } finally {
-            if (client) {
-                 console.log('[MSG SEND] Releasing DB client.');
-                 client.release(); // Always release client
-            }
+            if (client) { console.log('[MSG SEND] Releasing DB client.'); client.release(); } // Always release client
         }
     }); // End 'sendMessage'
 
@@ -218,7 +240,7 @@ io.on('connection', (socket) => {
 
     // --- Typing Indicators ---
     socket.on('typing', (data) => {
-        if (!socket.user) return; // Added auth check here for consistency
+        if (!socket.user) return;
         const recipientUid = data?.recipientUid; if (!recipientUid) return;
         socket.to(recipientUid).emit('typingStatus', { senderUid: socket.user.uid, isTyping: data.isTyping === true });
     }); // End 'typing'
@@ -247,5 +269,5 @@ server.listen(PORT, () => {
 });
 server.on('error', (error) => {
     console.error('!!! Server Error !!!:', error);
-    process.exit(1);
+    process.exit(1); // Exit on critical server startup errors
 });
