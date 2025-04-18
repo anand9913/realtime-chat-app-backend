@@ -246,57 +246,125 @@ input:focus {
 #connection-status { margin-top: 15px; font-weight: 500; font-size: 0.9em; }
 
 /* --- Responsive Adjustments --- */
+/* style.css - Responsive Adjustments Section */
+
 @media (max-width: 768px) {
-    body { /* Allow body scroll ONLY if profile page might need it */ /* overflow: auto; */ }
-    .chat-app-container { width: 100vw; height: 100vh; max-width: none; max-height: none; border-radius: 0; /* JS toggles panels */ }
-    .profile-page-container { margin: 0; border-radius: 0; box-shadow: none; max-width: 100%; padding: 15px; height: 100vh; overflow-y: auto; }
-    body.profile-active { overflow: hidden; } /* Prevent body scroll when profile page is 'active' */
-    .profile-pic-large { width: 120px; height: 120px; }
-    #profile-form button[type="submit"] { width: 100%; }
-    /* Mobile view panel toggling */
-     .sidebar { width: 100%; max-width: none; border-right: none; height: 100%; display: flex; /* Show sidebar by default? */ }
-     .chat-area { width: 100%; height: 100%; display: none; /* Hide chat area by default */ }
+    html, body {
+        /* Ensure body and html take full height reliably on mobile */
+        /* Consider adding height: 100% if issues persist with vh units */
+        /* height: 100%; */
+        max-height: 100vh; /* Use viewport height, but prevent exceeding */
+        overflow: hidden; /* Prevent scrolling on body itself */
+    }
+
+    .chat-app-container {
+        width: 100vw;
+        height: 100vh; /* Use full viewport height */
+        max-width: none;
+        max-height: none;
+        border-radius: 0;
+        box-shadow: none; /* Remove shadow on mobile maybe */
+        /* JS toggles panels using mobile-hidden class */
+    }
+
+    /* Mobile view panel toggling rules */
+     .sidebar {
+         width: 100%; /* Take full width when visible */
+         max-width: none;
+         border-right: none;
+         height: 100%;
+         display: flex; /* Ensure it's flex even if hidden/shown */
+         flex-direction: column;
+     }
+     .chat-area {
+         width: 100%; /* Take full width when visible */
+         height: 100%;
+         display: none; /* Start hidden by default */
+         flex-direction: column;
+     }
      .sidebar.mobile-hidden { display: none !important; }
      .chat-area.mobile-hidden { display: none !important; }
-     .chat-area:not(.mobile-hidden) { display: flex !important; } /* Ensure chat shows when class removed */
-    .message { max-width: 90%; }
-    .message-list { padding: 15px 3%; }
-    #mobile-back-button { margin-right: 10px; border: none; background: none; color: var(--text-secondary); font-size: 1.2em; cursor: pointer; padding: 8px; flex-shrink: 0; order: -1; }
-}
+     /* Ensure chat area displays as flex when shown */
+     .chat-area:not(.mobile-hidden) {
+          display: flex !important;
+     }
 
-/* new */
+    /* --- CRITICAL LAYOUT FIXES FOR CHAT AREA on Mobile --- */
+     .chat-area { /* These apply when .chat-area is displayed */
+         /* display: flex; */ /* Already set above */
+         /* flex-direction: column; */ /* Already set above */
+         height: 100%;          /* Take full available height */
+         max-height: 100%;      /* Prevent exceeding screen */
+         overflow: hidden;      /* Prevent chat area itself from scrolling */
+     }
 
-/* --- Updated Message Input Area for Mobile --- */
-.message-input-area {
-    display: flex;            /* Ensure flex layout */
-    align-items: center;      /* Vertically align items */
-    padding: 8px 10px;        /* Mobile padding */
-    background-color: var(--primary-bg);
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;           /* Prevent shrinking */
-    position: relative;       /* Keep positioning context */
-    z-index: 1;               /* Keep above chat background */
-}
-.message-input-area button {
-    padding: 8px;             /* Standard padding */
-    margin: 0 5px;            /* Spacing around buttons */
-    flex-shrink: 0;           /* Prevent buttons shrinking */
-}
-.message-input-area button i {
-    font-size: 1.3em;         /* Icon size (adjust if needed) */
-    color: var(--text-secondary);
-    vertical-align: middle;  /* Better icon alignment */
-}
-.message-input-area input {
-    flex-grow: 1;             /* Input takes remaining space */
-    margin: 0 5px;            /* Input spacing */
-    border-radius: 20px;
-    background-color: var(--secondary-bg);
-    border: 1px solid var(--border-color);
-    height: 40px;             /* Input height (adjust if needed) */
-    padding: 8px 15px;        /* Input text padding */
-    font-size: 1rem;          /* Ensure font size isn't too small */
-}
-#send-button i {
-     color: var(--primary-accent); /* Keep send button colored */
-}
+     .chat-header {
+         flex-shrink: 0; /* Prevent header from shrinking */
+         position: relative;
+         z-index: 2;
+         /* Keep other header styles */
+         padding: 8px 10px; /* Slightly reduce padding on mobile */
+     }
+
+     .message-list {
+         flex-grow: 1;       /* Critical: Allows message list to take available space */
+         overflow-y: auto;   /* Critical: Allows scrolling ONLY for messages */
+         min-height: 0;      /* Critical: Flexbox fix for scrolling */
+         padding: 10px 3%;   /* Mobile padding */
+         background: transparent;
+         position: relative;
+         z-index: 1;
+         /* Remove any fixed height property */
+     }
+
+     .typing-indicator {
+         flex-shrink: 0; /* Prevent shrinking */
+         z-index: 1;
+         padding: 5px 3%; /* Match message list horizontal padding */
+         height: auto; /* Let content determine height */
+         /* Keep other typing styles */
+     }
+
+     .message-input-area {
+         flex-shrink: 0; /* Critical: Prevent footer from shrinking */
+         position: relative;
+         z-index: 2;
+         background-color: var(--primary-bg);
+         padding: 8px 10px;
+         /* Keep other input area styles */
+     }
+     /* --- END CRITICAL LAYOUT FIXES --- */
+
+
+    /* Other Mobile Adjustments */
+    .message {
+        max-width: 90%; /* Allow messages to be slightly wider */
+    }
+
+    /* Mobile back button style */
+    #mobile-back-button {
+        margin-right: 8px; /* Adjust spacing */
+        border: none;
+        background: none;
+        color: var(--text-secondary);
+        font-size: 1.3em; /* Make icon slightly larger */
+        cursor: pointer;
+        padding: 8px; /* Clickable area */
+        flex-shrink: 0;
+        order: -1; /* Place before profile info */
+        line-height: 1;
+    }
+    #mobile-back-button:hover {
+        opacity: 0.8;
+    }
+
+    /* Adjust profile page for mobile */
+    .profile-page-container {
+        margin: 0; border-radius: 0; box-shadow: none; max-width: 100%;
+        padding: 15px; height: 100vh; overflow-y: auto;
+    }
+    body.profile-active { overflow: hidden; } /* Prevent body scroll when profile active */
+    .profile-pic-large { width: 120px; height: 120px; }
+    #profile-form button[type="submit"] { width: 100%; }
+
+} /* End of @media (max-width: 768px) */
