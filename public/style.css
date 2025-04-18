@@ -261,6 +261,42 @@ input:focus {
      .chat-area:not(.mobile-hidden) { display: flex !important; } /* Ensure chat shows when class removed */
     .message { max-width: 90%; }
     .message-list { padding: 15px 3%; }
-    .message-input-area { padding: 8px 10px; }
     #mobile-back-button { margin-right: 10px; border: none; background: none; color: var(--text-secondary); font-size: 1.2em; cursor: pointer; padding: 8px; flex-shrink: 0; order: -1; }
+}
+
+/* new */
+
+/* --- Updated Message Input Area for Mobile --- */
+.message-input-area {
+    display: flex;            /* Ensure flex layout */
+    align-items: center;      /* Vertically align items */
+    padding: 8px 10px;        /* Mobile padding */
+    background-color: var(--primary-bg);
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;           /* Prevent shrinking */
+    position: relative;       /* Keep positioning context */
+    z-index: 1;               /* Keep above chat background */
+}
+.message-input-area button {
+    padding: 8px;             /* Standard padding */
+    margin: 0 5px;            /* Spacing around buttons */
+    flex-shrink: 0;           /* Prevent buttons shrinking */
+}
+.message-input-area button i {
+    font-size: 1.3em;         /* Icon size (adjust if needed) */
+    color: var(--text-secondary);
+    vertical-align: middle;  /* Better icon alignment */
+}
+.message-input-area input {
+    flex-grow: 1;             /* Input takes remaining space */
+    margin: 0 5px;            /* Input spacing */
+    border-radius: 20px;
+    background-color: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    height: 40px;             /* Input height (adjust if needed) */
+    padding: 8px 15px;        /* Input text padding */
+    font-size: 1rem;          /* Ensure font size isn't too small */
+}
+#send-button i {
+     color: var(--primary-accent); /* Keep send button colored */
 }
