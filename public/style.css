@@ -309,7 +309,7 @@ input:focus {
         flex-shrink: 0; /* Prevent header from shrinking */
         position: relative; /* Keep relative positioning */
         z-index: 2; /* Ensure header is above message list content */
-        padding: 8px 10px; /* Mobile padding */
+        padding: 0px 10px 8px 10px /* Mobile padding */
         /* Base styles that apply: */
         display: flex;
         align-items: center;
