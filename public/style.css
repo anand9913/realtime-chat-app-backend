@@ -251,88 +251,77 @@ input:focus {
 @media (max-width: 768px) {
     html, body {
         /* Ensure body and html take full height reliably on mobile */
-        /* Consider adding height: 100% if issues persist with vh units */
-        /* height: 100%; */
-        max-height: 100vh; /* Use viewport height, but prevent exceeding */
+        height: 100%;
+        max-height: 100%;
         overflow: hidden; /* Prevent scrolling on body itself */
     }
 
     .chat-app-container {
         width: 100vw;
-        height: 100vh; /* Use full viewport height */
+        /* Use 100% height of parent (body) instead of vh unit */
+        height: 100%;
         max-width: none;
         max-height: none;
         border-radius: 0;
-        box-shadow: none; /* Remove shadow on mobile maybe */
         /* JS toggles panels using mobile-hidden class */
     }
 
     /* Mobile view panel toggling rules */
      .sidebar {
-         width: 100%; /* Take full width when visible */
-         max-width: none;
-         border-right: none;
-         height: 100%;
-         display: flex; /* Ensure it's flex even if hidden/shown */
-         flex-direction: column;
+         width: 100%; max-width: none; border-right: none; height: 100%; display: flex; flex-direction: column;
      }
-     .chat-area {
-         width: 100%; /* Take full width when visible */
-         height: 100%;
-         display: none; /* Start hidden by default */
-         flex-direction: column;
-     }
+    .chat-area {
+        width: 100%; height: 100%; display: none; /* Hidden by default */ flex-direction: column; /* Ensure flex direction */
+    }
      .sidebar.mobile-hidden { display: none !important; }
      .chat-area.mobile-hidden { display: none !important; }
      /* Ensure chat area displays as flex when shown */
      .chat-area:not(.mobile-hidden) {
-          display: flex !important;
-     }
+           display: flex !important;
+           height: 100%; /* Ensure it takes full height when visible */
+      }
 
     /* --- CRITICAL LAYOUT FIXES FOR CHAT AREA on Mobile --- */
-     .chat-area { /* These apply when .chat-area is displayed */
-         /* display: flex; */ /* Already set above */
-         /* flex-direction: column; */ /* Already set above */
-         height: 100%;          /* Take full available height */
-         max-height: 100%;      /* Prevent exceeding screen */
-         overflow: hidden;      /* Prevent chat area itself from scrolling */
-     }
+     .chat-area { /* Apply these directly inside the media query */
+          display: flex;         /* Use flexbox */
+          flex-direction: column; /* Stack children vertically */
+          height: 100%;          /* Take full available height */
+          max-height: 100%;      /* Prevent exceeding screen */
+          overflow: hidden;      /* Prevent chat area itself from scrolling */
+      }
 
      .chat-header {
-         flex-shrink: 0; /* Prevent header from shrinking */
-         position: relative;
-         z-index: 2;
-         /* Keep other header styles */
-         padding: 8px 10px; /* Slightly reduce padding on mobile */
-     }
+          flex-shrink: 0; /* Prevent header from shrinking */
+          /* Keep other header styles */
+          position: relative; /* Ensure z-index works if needed */
+          z-index: 2;
+      }
 
      .message-list {
-         flex-grow: 1;       /* Critical: Allows message list to take available space */
-         overflow-y: auto;   /* Critical: Allows scrolling ONLY for messages */
-         min-height: 0;      /* Critical: Flexbox fix for scrolling */
-         padding: 10px 3%;   /* Mobile padding */
-         background: transparent;
-         position: relative;
-         z-index: 1;
-         /* Remove any fixed height property */
-     }
+          flex-grow: 1;       /* Allow message list to take ALL available space */
+          overflow-y: auto;   /* Enable vertical scrolling ONLY for messages */
+          min-height: 0;      /* Important flexbox fix for scrolling */
+          padding: 15px 3%;   /* Mobile padding */
+          background: transparent; /* Ensure background doesn't cover main chat area bg */
+          position: relative; /* Ensure messages above chat area bg pattern */
+          z-index: 1;
+      }
 
      .typing-indicator {
-         flex-shrink: 0; /* Prevent shrinking */
-         z-index: 1;
-         padding: 5px 3%; /* Match message list horizontal padding */
-         height: auto; /* Let content determine height */
-         /* Keep other typing styles */
-     }
+          flex-shrink: 0; /* Prevent shrinking */
+          z-index: 1;     /* Keep above background */
+          padding: 5px 3%; /* Match message list horizontal padding */
+           /* Keep other typing styles */
+      }
 
      .message-input-area {
-         flex-shrink: 0; /* Critical: Prevent footer from shrinking */
-         position: relative;
-         z-index: 2;
-         background-color: var(--primary-bg);
-         padding: 8px 10px;
-         /* Keep other input area styles */
-     }
+          flex-shrink: 0; /* Prevent footer from shrinking */
+          position: relative; /* Keep above background */
+          z-index: 2;
+          background-color: var(--primary-bg); /* Ensure solid background */
+          padding: 8px 10px;
+          /* Keep other input area styles */
+      }
      /* --- END CRITICAL LAYOUT FIXES --- */
 
 
