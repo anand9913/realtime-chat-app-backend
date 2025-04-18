@@ -245,84 +245,97 @@ input:focus {
 /* Connection status message on profile page */
 #connection-status { margin-top: 15px; font-weight: 500; font-size: 0.9em; }
 
-/* --- Responsive Adjustments --- */
 /* style.css - Responsive Adjustments Section */
 
 @media (max-width: 768px) {
     html, body {
-        /* Ensure body and html take full height reliably on mobile */
-        height: 100%;
-        max-height: 100%;
-        overflow: hidden; /* Prevent scrolling on body itself */
+        /* Removed explicit height: 100%; */
+        /* Rely on JS to set container height based on window.innerHeight */
+        max-height: 100vh; /* Still useful as a constraint */
+        overflow: hidden;  /* Prevent scrolling on body itself */
     }
 
     .chat-app-container {
         width: 100vw;
-        /* Use 100% height of parent (body) instead of vh unit */
-        height: 100%;
+        /* REMOVED height: 100vh / 100%; Let JS set the height */
+        /* Height will be set dynamically via inline style by chat.js */
         max-width: none;
-        max-height: none;
+        max-height: none; /* Height constraint now set by JS */
         border-radius: 0;
-        /* JS toggles panels using mobile-hidden class */
+        box-shadow: none;
+        /* Ensure flex direction is column if needed for panel toggling */
+        /* display: flex; */ /* Already set globally */
+        /* flex-direction: column; */ /* This might conflict if sidebar/chat are side-by-side initially before JS hides one */
     }
 
     /* Mobile view panel toggling rules */
      .sidebar {
-         width: 100%; max-width: none; border-right: none; height: 100%; display: flex; flex-direction: column;
+         width: 100%; /* Take full width when visible */
+         max-width: none;
+         border-right: none;
+         height: 100%; /* Take full height of parent container */
+         display: flex;
+         flex-direction: column;
      }
-    .chat-area {
-        width: 100%; height: 100%; display: none; /* Hidden by default */ flex-direction: column; /* Ensure flex direction */
-    }
+     .chat-area {
+         width: 100%; /* Take full width when visible */
+         height: 100%; /* Take full height of parent container */
+         display: none; /* Start hidden by default */
+         flex-direction: column; /* Stack children vertically */
+     }
      .sidebar.mobile-hidden { display: none !important; }
      .chat-area.mobile-hidden { display: none !important; }
-     /* Ensure chat area displays as flex when shown */
+     /* Ensure chat area displays as flex when JS makes it visible */
      .chat-area:not(.mobile-hidden) {
-           display: flex !important;
-           height: 100%; /* Ensure it takes full height when visible */
-      }
+          display: flex !important;
+     }
 
-    /* --- CRITICAL LAYOUT FIXES FOR CHAT AREA on Mobile --- */
-     .chat-area { /* Apply these directly inside the media query */
-          display: flex;         /* Use flexbox */
-          flex-direction: column; /* Stack children vertically */
-          height: 100%;          /* Take full available height */
-          max-height: 100%;      /* Prevent exceeding screen */
-          overflow: hidden;      /* Prevent chat area itself from scrolling */
-      }
+    /* --- Layout Rules for CHAT AREA Children on Mobile --- */
+     /* These apply when .chat-area is displayed */
+     .chat-area {
+         /* display: flex; */ /* Set above */
+         /* flex-direction: column; */ /* Set above */
+         /* height: 100%; */ /* Set above */
+         max-height: 100%;      /* Prevent exceeding container */
+         overflow: hidden;      /* Prevent chat area itself from scrolling */
+     }
 
      .chat-header {
-          flex-shrink: 0; /* Prevent header from shrinking */
-          /* Keep other header styles */
-          position: relative; /* Ensure z-index works if needed */
-          z-index: 2;
-      }
+         flex-shrink: 0; /* Prevent header from shrinking */
+         position: relative;
+         z-index: 2;
+         padding: 8px 10px; /* Mobile padding */
+         /* Keep other header styles */
+     }
 
      .message-list {
-          flex-grow: 1;       /* Allow message list to take ALL available space */
-          overflow-y: auto;   /* Enable vertical scrolling ONLY for messages */
-          min-height: 0;      /* Important flexbox fix for scrolling */
-          padding: 15px 3%;   /* Mobile padding */
-          background: transparent; /* Ensure background doesn't cover main chat area bg */
-          position: relative; /* Ensure messages above chat area bg pattern */
-          z-index: 1;
-      }
+         flex-grow: 1;       /* Critical: Allows message list to take available space */
+         overflow-y: auto;   /* Critical: Allows scrolling ONLY for messages */
+         min-height: 0;      /* Critical: Flexbox fix for scrolling */
+         padding: 10px 3%;   /* Mobile padding */
+         background: transparent;
+         position: relative;
+         z-index: 1;
+         /* Keep other message list styles */
+     }
 
      .typing-indicator {
-          flex-shrink: 0; /* Prevent shrinking */
-          z-index: 1;     /* Keep above background */
-          padding: 5px 3%; /* Match message list horizontal padding */
-           /* Keep other typing styles */
-      }
+         flex-shrink: 0; /* Prevent shrinking */
+         z-index: 1;
+         padding: 5px 3%;
+         height: auto;
+         /* Keep other typing styles */
+     }
 
      .message-input-area {
-          flex-shrink: 0; /* Prevent footer from shrinking */
-          position: relative; /* Keep above background */
-          z-index: 2;
-          background-color: var(--primary-bg); /* Ensure solid background */
-          padding: 8px 10px;
-          /* Keep other input area styles */
-      }
-     /* --- END CRITICAL LAYOUT FIXES --- */
+         flex-shrink: 0; /* Critical: Prevent footer from shrinking */
+         position: relative;
+         z-index: 2;
+         background-color: var(--primary-bg);
+         padding: 8px 10px;
+         /* Keep other input area styles */
+     }
+     /* --- END Layout Rules for CHAT AREA Children --- */
 
 
     /* Other Mobile Adjustments */
@@ -332,13 +345,13 @@ input:focus {
 
     /* Mobile back button style */
     #mobile-back-button {
-        margin-right: 8px; /* Adjust spacing */
+        margin-right: 8px;
         border: none;
         background: none;
         color: var(--text-secondary);
-        font-size: 1.3em; /* Make icon slightly larger */
+        font-size: 1.3em;
         cursor: pointer;
-        padding: 8px; /* Clickable area */
+        padding: 8px;
         flex-shrink: 0;
         order: -1; /* Place before profile info */
         line-height: 1;
@@ -352,7 +365,10 @@ input:focus {
         margin: 0; border-radius: 0; box-shadow: none; max-width: 100%;
         padding: 15px; height: 100vh; overflow-y: auto;
     }
-    body.profile-active { overflow: hidden; } /* Prevent body scroll when profile active */
+    /* Add this class via JS when profile page is active */
+    body.profile-active {
+        overflow: hidden;
+    }
     .profile-pic-large { width: 120px; height: 120px; }
     #profile-form button[type="submit"] { width: 100%; }
 
