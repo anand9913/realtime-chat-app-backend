@@ -47,6 +47,26 @@ body.bg-white {
      background-color: var(--secondary-bg);
 }
 
+emoji-picker { /* Target the custom element */
+    display: none; /* Hidden by default */
+    position: absolute; /* Position relative to its container */
+    /* Adjust positioning - place it above the input area */
+    bottom: 55px; /* Experiment with this value */
+    left: 5px;   /* Experiment with this value */
+    z-index: 1001; /* Ensure it's above other elements */
+    border: 1px solid #ccc;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    border-radius: 8px;
+}
+
+emoji-picker.visible { /* Class to show the picker */
+    display: block; /* Or potentially 'flex' if needed by the element */
+}
+
+/* Ensure chat area can contain the absolutely positioned picker */
+.chat-area {
+    position: relative; /* Needed for absolute positioning of children */
+}
 
 button {
     cursor: pointer;
