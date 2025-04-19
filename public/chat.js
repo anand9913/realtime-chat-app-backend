@@ -41,80 +41,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
     //new 15:13 date 19
 
-    let emojiPicker = null; // Variable to hold the picker instance
+    let picmoPicker = null; // Variable to hold the PicMo picker instance
 
-    function initializeEmojiPicker() {
-        if (!emojiButton || !messageInput) {
-            console.error("Cannot initialize emoji picker: Button or Input not found.");
-            return;
+    function initializePicmoPicker() {
+        if (!emojiButton || !messageInput) { console.error("PicMo Init Error: Button or Input not found."); return; }
+
+        // Check if PicMoPopup library loaded (it exposes PicMoPopup globally from UMD)
+        if (typeof PicMoPopup === 'undefined') {
+            console.error("PicMoPopup library not loaded. Check the script tag in chat.html.");
+            emojiButton.disabled = true; emojiButton.style.opacity = '0.5'; emojiButton.title = "Emoji picker failed"; return;
         }
 
-        // Check if the EmojiButton library loaded
-        if (typeof EmojiButton === 'undefined') {
-             console.error("EmojiButton library not loaded. Check the script tag in chat.html.");
-             // Disable the button visually if library failed
-             emojiButton.disabled = true;
-             emojiButton.style.opacity = '0.5';
-             emojiButton.title = "Emoji picker failed to load";
-             return;
-        }
+        console.log("Initializing PicMo Picker...");
+            try {
+                // Create the picker instance
+                 picmoPicker = PicMoPopup.createPopup({
+                     // Optional root element if needed, defaults to document.body
+                     // rootElement: document.querySelector('#some-container')
+                     theme: 'auto', // Light/dark based on system
+                     emojiSize: '1.5rem', // Adjust size as needed
+                     emojisPerRow: 8,
+                     visibleRows: 6,
+                     showPreview: false, // Optional: hide the preview section
+                     showSearch: true, // Optional: enable search
+                     showCategoryTabs: true, // Optional: show category tabs
+                     // initialCategory: 'recents' // Optional: start category
+                 }, { // Options for positioning/triggering
+                     referenceElement: emojiButton, // Position relative to the emoji button
+                     triggerElement: emojiButton,   // Open when the emoji button is clicked
+                     position: 'top-end', // Position picker above and to the end of the button
+                     // Other position options: 'bottom-start', 'left-end', etc.
+                 });
 
-        console.log("Initializing Emoji Picker...");
-        try {
-            emojiPicker = new EmojiButton({
-                position: 'top-start', // Position relative to the trigger button
-                autoHide: true,       // Hide picker when clicking outside
-                theme: 'auto',        // Use light/dark based on system
-                // categoryOrder: [...], // Optional: Customize category order
-                // categories: [...],    // Optional: Customize available categories
-                 emojiSize: '1.5em',
-                 emojisPerRow: 8,
-                 rows: 6,
-            });
+                 // Listen for emoji selection
+                 picmoPicker.addEventListener('emoji:select', (event) => {
+                     console.log(`PicMo Emoji selected: ${event.emoji}`);
+                     insertTextAtCursor(messageInput, event.emoji); // Insert the selected emoji
+                     messageInput.focus(); // Keep focus on input
+                 });
 
-            // --- Event Listener for Emoji Selection ---
-            emojiPicker.on('emoji', selection => {
-                console.log(`Emoji selected: ${selection.emoji}`);
-                insertTextAtCursor(messageInput, selection.emoji); // Insert emoji
-                messageInput.focus(); // Keep focus on input
-            });
+                 // PicMoPopup automatically handles toggling via the triggerElement,
+                 // so we might not need a separate click listener on the button,
+                 // unless we want custom toggle behavior. Let's rely on PicMo's default for now.
+                 /*
+                 emojiButton.addEventListener('click', () => {
+                     console.log("Emoji button clicked, toggling PicMo picker...");
+                     if (picmoPicker) {
+                         picmoPicker.toggle(); // Toggle the picker visibility
+                     } else { console.error("PicMo picker not initialized!"); }
+                 });
+                 */
+                 console.log("PicMo Picker created and event listener attached.");
+                 emojiButton.disabled = false; // Ensure button is enabled
 
-            // --- Event Listener to Toggle Picker ---
-            emojiButton.addEventListener('click', () => {
-                console.log("Emoji button clicked, toggling picker...");
-                if (emojiPicker) {
-                    emojiPicker.togglePicker(emojiButton); // Show/hide the picker
-                } else {
-                    console.error("Emoji picker not initialized!");
-                }
-            });
-            console.log("Emoji Picker initialized and listener attached.");
+            } catch (error) {
+                console.error("Error initializing PicMo Picker:", error);
+                emojiButton.disabled = true; emojiButton.style.opacity = '0.5'; emojiButton.title = "Emoji picker failed";
+            }
+        } // End initializePicmoPicker
 
-        } catch (error) {
-             console.error("Error initializing Emoji Picker:", error);
-             emojiButton.disabled = true;
-             emojiButton.style.opacity = '0.5';
-             emojiButton.title = "Emoji picker failed to load";
-        }
-    }
 
     // --- Helper Function to Insert Text at Cursor ---
     function insertTextAtCursor(inputElement, textToInsert) {
         if (!inputElement) return;
-
-        const startPos = inputElement.selectionStart;
-        const endPos = inputElement.selectionEnd;
-        const currentVal = inputElement.value;
-
-        // Insert the text at the cursor position(s)
+        const startPos = inputElement.selectionStart; const endPos = inputElement.selectionEnd; const currentVal = inputElement.value;
         inputElement.value = currentVal.substring(0, startPos) + textToInsert + currentVal.substring(endPos, currentVal.length);
-
-        // Move the cursor position to after the inserted text
         const newCursorPos = startPos + textToInsert.length;
-        inputElement.selectionStart = newCursorPos;
-        inputElement.selectionEnd = newCursorPos;
-
-        // Trigger input event manually if needed by other listeners (optional)
+        inputElement.selectionStart = newCursorPos; inputElement.selectionEnd = newCursorPos;
+        // Trigger input event manually if needed for frameworks/other listeners
         // inputElement.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
@@ -453,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("[Initialize] initializeChatApp started...");
         displayContactsOrSearchResults([], false); // Display empty initially
         setupMobileView();
-        setTimeout(initializeEmojiPicker, 1000); // Delay initialization slightly (e.g., 100ms)
+        setTimeout(initializePicmoPicker, 100); // Delay initialization slightly (e.g., 100ms)
 
         console.log("[Initialize] initializeChatApp finished basic setup (Emoji Picker delayed).");
     }
