@@ -204,8 +204,23 @@ input:focus {
 .message .bubble p { margin: 0; margin-bottom: 15px; white-space: pre-wrap; line-height: 1.4; }
 .message-meta { position: absolute; bottom: 4px; right: 8px; font-size: 0.7em; color: var(--text-secondary); opacity: 0.8; display: flex; align-items: center; line-height: 1; }
 .sender-name { font-size: 0.8em; font-weight: 500; color: var(--primary-accent); margin-bottom: 3px; }
-.status-ticks { margin-left: 4px; display: inline-block; }
-.status-ticks i { font-size: 1em; color: var(--text-secondary); }
+.status-ticks { margin-left: 4px; display: inline-block; line-height: 1; /* Ensure vertical alignment */
+              font-size: 1em; /* Match timestamp size */ }
+.status-ticks i { font-size: 1em; color: var(--text-secondary); transition: color 0.3s ease; }
+.status-ticks i.fa-clock { /* Sending */
+    color: var(--text-secondary);
+}
+.status-ticks i.fa-check { /* Sent */
+    color: var(--text-secondary);
+}
+.status-ticks i.fa-check-double { /* Delivered or Read */
+    color: var(--text-secondary);
+    position: relative; /* Needed for slight overlap effect */
+}
+.status-ticks i.fa-check-double::before {
+   /* If using FontAwesome 5/6 solid style, might not need this */
+   /* position: relative; left: -2px; */
+}
 .status-ticks i.delivered { color: var(--text-secondary); }
 .status-ticks i.read { color: var(--link-color); }
 .fa-check-double::before { position: relative; left: -2px; }

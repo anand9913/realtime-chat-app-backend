@@ -143,37 +143,92 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         console.log("chat.js: Listener attached for 'searchResultsUsers'");
 
-        // Handle Chat History
+        // MODIFIED: Handle Chat History (to potentially trigger 'read' status emit)
         socket.on('chatHistory', (data) => {
-            console.log("chat.js: Event listener fired: chatHistory");
+            console.log("chat.js: Event fired: chatHistory");
             if (!data || !data.chatId || !Array.isArray(data.messages)) return;
-            console.log(`[History] Received ${data.messages.length} messages for chat ${data.chatId}`);
+            console.log(`[History] Received ${data.messages.length} for ${data.chatId}`);
             currentMessages[data.chatId] = data.messages;
-            if (data.chatId === currentChatId) { if (messageList) messageList.innerHTML = ''; data.messages.forEach(displayMessage); scrollToBottom(); }
+
+            if (data.chatId === currentChatId) {
+                if (messageList) messageList.innerHTML = '';
+                data.messages.forEach(displayMessage);
+                scrollToBottom();
+
+                // --- Emit 'read' status for newly loaded, unread messages ---
+                const unreadReceivedMessageIds = data.messages
+                    .filter(msg => msg.sender !== currentUser.id && msg.status !== 'read')
+                    .map(msg => msg.id.toString()); // Get IDs as strings
+
+                if (unreadReceivedMessageIds.length > 0 && socket && socket.connected) {
+                    console.log(`[Status Emit] Emitting 'read' for ${unreadReceivedMessageIds.length} historic messages.`);
+                    socket.emit('messageStatusUpdate', { messageIds: unreadReceivedMessageIds, status: 'read' });
+                }
+                // --- End Emit 'read' ---
+            }
         });
         console.log("chat.js: Listener attached for 'chatHistory'");
 
-        // Handle Receiving Messages
+        // MODIFIED: Handle Receiving Messages (to emit 'delivered' status)
         socket.on('receiveMessage', (message) => {
-             // message = { id, sender, content, timestamp, senderName, senderPic }
-             console.log("chat.js: Event listener fired: receiveMessage");
-             if (!isSocketAuthenticated || !message || !message.sender) return;
-             console.log('Message received:', message);
-             const chatId = message.sender; // Assuming 1-on-1
-             if (!chatId) return;
-             if (!currentMessages[chatId]) currentMessages[chatId] = [];
-             currentMessages[chatId].push(message);
-             const senderContactIndex = currentContacts.findIndex(c => c.id === message.sender);
-             if (senderContactIndex === -1) { // If sender not in contact list yet
-                  console.log(`Adding sender ${message.sender} to contact list state.`);
-                  currentContacts.push({ id: message.sender, username: message.senderName || message.sender, profilePicUrl: message.senderPic || null });
-                   // updateContactPreview will re-render list if not searching
-             }
-             updateContactPreview(chatId, message.content, message.timestamp, message.sender); // Update preview & re-render list
-             if (chatId === currentChatId) { displayMessage(message); scrollToBottom(); /* TODO: Mark as read */ }
-             else { /* TODO: Increment unread count for contact */ }
+            console.log("chat.js: Event fired: receiveMessage");
+            if (!isSocketAuthenticated || !message || !message.sender || !message.id) return;
+            console.log('Message received:', message);
+
+            const chatId = message.sender; // For 1-on-1, sender is the chat ID
+            const otherUserId = message.sender; // Explicitly the sender
+
+            if (!chatId) return;
+            if (!currentMessages[chatId]) currentMessages[chatId] = [];
+            // Prevent duplicates if server re-emits somehow
+            if (!currentMessages[chatId].some(m => m.id === message.id)) {
+                currentMessages[chatId].push(message);
+            }
+
+            const senderContactIndex = currentContacts.findIndex(c => c.id === otherUserId);
+            if (senderContactIndex === -1) {
+                console.log(`Adding sender ${otherUserId} to contact list state.`);
+                currentContacts.push({ id: otherUserId, username: message.senderName || otherUserId, profilePicUrl: message.senderPic || null });
+            }
+            // Update preview even if contact exists
+            updateContactPreview(chatId, message.content, message.timestamp, message.sender);
+
+            if (chatId === currentChatId) {
+                // Check if message already displayed (e.g., from history load race condition)
+                if (!messageList.querySelector(`[data-message-id="${message.id}"]`)) {
+                     displayMessage(message);
+                     scrollToBottom();
+                }
+                // --- Emit 'delivered' status ---
+                // Only emit if the message hasn't already been marked delivered/read client-side
+                 const msgState = currentMessages[chatId]?.find(m => m.id === message.id);
+                if (socket && socket.connected && (!msgState || msgState.status === 'sent')) {
+                     console.log(`[Status Emit] Emitting 'delivered' for message ${message.id}`);
+                     socket.emit('messageStatusUpdate', { messageId: message.id.toString(), status: 'delivered' });
+                     // Optionally update local state immediately
+                     if (msgState) msgState.status = 'delivered';
+                }
+                // --- End Emit 'delivered' ---
+                // --- Emit 'read' status immediately if chat is open ---
+                 if (socket && socket.connected && (!msgState || msgState.status !== 'read')) {
+                     console.log(`[Status Emit] Emitting 'read' for received message ${message.id} (chat open).`);
+                     // Use a slight delay to allow 'delivered' to potentially process first if needed
+                     setTimeout(() => {
+                         if (socket && socket.connected) { // Check socket again in timeout
+                              socket.emit('messageStatusUpdate', { messageIds: [message.id.toString()], status: 'read' });
+                         }
+                          // Optionally update local state immediately
+                          if (msgState) msgState.status = 'read';
+                     }, 150); // Small delay
+                 }
+                 // --- End Emit 'read' ---
+
+            } else {
+                // TODO: Increment unread count for contact in sidebar
+                // Don't emit delivered/read if chat isn't open, do it when they loadChat
+            }
         });
-        console.log("chat.js: Listener attached for 'receiveMessage'");
+        console.log("chat.js: Listener attached for 'receiveMessage'")
 
         // Handle Typing Status
         socket.on('typingStatus', (data) => {
@@ -196,7 +251,37 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("chat.js: Listener attached for 'typingStatus'");
 
         // Other Handlers
-        socket.on('messageSentConfirmation', (data) => { console.log("chat.js: Event listener fired: messageSentConfirmation"); /* ... */ });
+        socket.on('messageSentConfirmation', (data) => {
+             console.log(`[Sent Confirmation] Received for tempId: ${data.tempId}, dbId: ${data.dbId}, status: ${data.status}`);
+             if (!data || !data.tempId || !data.dbId || !data.status) return;
+
+             // Find the message element displayed with the temp ID
+             const messageEl = messageList?.querySelector(`.message.sent[data-message-id="${data.tempId}"]`);
+             if (messageEl) {
+                 // Update its dataset ID to the real DB ID
+                 messageEl.dataset.messageId = data.dbId.toString();
+                 // Update the tick status
+                 const ticksContainer = messageEl.querySelector('.status-ticks');
+                 if (ticksContainer) {
+                     updateTickIcon(ticksContainer, data.status); // Should be 'sent'
+                 }
+             }
+
+             // Update the message ID and status in the state cache
+              let messageUpdatedInState = false;
+              for (const chatId in currentMessages) {
+                 const messageIndex = currentMessages[chatId].findIndex(msg => msg.id === data.tempId);
+                 if (messageIndex !== -1) {
+                     currentMessages[chatId][messageIndex].id = data.dbId.toString(); // Update ID
+                     currentMessages[chatId][messageIndex].status = data.status;     // Update status
+                     messageUpdatedInState = true;
+                     break;
+                 }
+              }
+              if (!messageUpdatedInState) {
+                 console.warn(`[Sent Confirmation] Could not find message with tempId ${data.tempId} in state cache.`);
+              }
+         });
         console.log("chat.js: Listener attached for 'messageSentConfirmation'");
         socket.on('disconnect', (reason) => { console.log("chat.js: Event listener fired: disconnect"); isSocketAuthenticated = false; /* ... */ });
         console.log("chat.js: Listener attached for 'disconnect'");
@@ -205,8 +290,46 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.on('error', (error) => { console.log("chat.js: Event listener fired: error"); /* ... */ });
         console.log("chat.js: Listener attached for 'error'");
 
-        console.log("chat.js: Finished setting up socket event listeners.");
-    } // End connectWebSocket
+        // --- NEW: Handle Status Updates from Server ---
+            socket.on('updateMessageStatus', (data) => {
+                console.log(`[Status Update Received] messageId: ${data.messageId}, status: ${data.status}`);
+                if (!data || !data.messageId || !data.status) return;
+
+                // Find the message element in the DOM (only care about updating SENT messages visually)
+                const messageEl = messageList?.querySelector(`.message.sent[data-message-id="${data.messageId}"]`);
+                if (messageEl) {
+                     const ticksContainer = messageEl.querySelector('.status-ticks');
+                     if(ticksContainer){
+                          updateTickIcon(ticksContainer, data.status);
+                     }
+                }
+
+                 // Update the status in the local state cache as well
+                 // Need to find which chat this message belongs to
+                 let messageUpdatedInState = false;
+                 for (const chatId in currentMessages) {
+                     const messageIndex = currentMessages[chatId].findIndex(msg => msg.id.toString() === data.messageId.toString());
+                     if (messageIndex !== -1) {
+                         // Avoid downgrading status (e.g., receiving 'delivered' after 'read')
+                         const currentStatus = currentMessages[chatId][messageIndex].status;
+                         const statusOrder = { 'sent': 0, 'delivered': 1, 'read': 2 };
+                         if (statusOrder[data.status] > statusOrder[currentStatus]) {
+                               currentMessages[chatId][messageIndex].status = data.status;
+                         }
+                         messageUpdatedInState = true;
+                         break; // Found the message
+                     }
+                 }
+                 if (!messageUpdatedInState) {
+                     console.warn(`[Status Update] Could not find message ${data.messageId} in state cache.`);
+                 }
+            });
+            console.log("chat.js: Listener attached for 'updateMessageStatus'");
+
+
+            console.log("chat.js: Finished setting up socket event listeners.");
+        } // End connectWebSocket
+
 
     // --- Main Application Functions ---
 
@@ -361,33 +484,107 @@ document.addEventListener('DOMContentLoaded', () => {
          }
      }
 
-    /** Appends a single message object to the message list UI */
+    /** MODIFIED: Appends a single message object to the message list UI, including status ticks */
     function displayMessage(message) {
         if (!messageList || !message || !message.sender || !currentUser.id) { return; }
-        const isSent = message.sender === currentUser.id; const messageEl = document.createElement('div');
+        // Prevent displaying duplicate messages if logic error occurs
+        if (message.id && messageList.querySelector(`[data-message-id="${message.id}"]`)) {
+             console.warn(`Attempted to display duplicate message ID: ${message.id}`);
+             return;
+        }
+
+        const isSent = message.sender === currentUser.id;
+        const messageEl = document.createElement('div');
         messageEl.classList.add('message', isSent ? 'sent' : 'received');
-        messageEl.dataset.messageId = message.id; messageEl.dataset.senderId = message.sender;
-        let ticksHtml = ''; /* TODO */ let senderNameHtml = ''; /* TODO Group */ let profilePicHtml = '';
-        const previousMsgEl = messageList.lastElementChild; const previousSender = previousMsgEl?.classList.contains('received') ? previousMsgEl.dataset.senderId : null;
+        // Use message.id which should now be the actual DB ID for received/history, or tempId for just sent
+        messageEl.dataset.messageId = message.id;
+        messageEl.dataset.senderId = message.sender;
+
+        let ticksHtml = '';
+        if (isSent) {
+             // Add placeholder for ticks - content set by updateTickIcon helper
+             ticksHtml = `<span class="status-ticks"><i class="fas fa-check"></i></span>`; // Default to single tick initially
+        }
+        let senderNameHtml = ''; // Only needed for group chats later
+        let profilePicHtml = '';
+        const previousMsgEl = messageList.lastElementChild;
+        const previousSender = previousMsgEl?.classList.contains('received') ? previousMsgEl.dataset.senderId : null;
         const showPic = !isSent && message.sender !== previousSender;
-        if (showPic) { const senderContact = currentContacts.find(c => c.id === message.sender); const picUrl = senderContact?.profilePicUrl || defaultPic; profilePicHtml = `<img src="${picUrl}" alt="" class="profile-pic-small" onerror="this.onerror=null; this.src='${defaultPic}';">`; }
-        const displayTimestamp = typeof message.timestamp === 'string' ? message.timestamp : ' ';
-        messageEl.innerHTML = `${showPic ? profilePicHtml : '<div style="width: 36px; flex-shrink: 0;"></div>'}<div class="bubble">${senderNameHtml}<p>${escapeHtml(message.content)}</p><div class="message-meta"><span class="timestamp">${displayTimestamp}</span>${ticksHtml}</div></div>`;
+
+        if (showPic) {
+            const senderContact = currentContacts.find(c => c.id === message.sender);
+            const picUrl = senderContact?.profilePicUrl || defaultPic;
+            profilePicHtml = `<img src="${picUrl}" alt="" class="profile-pic-small" onerror="this.onerror=null; this.src='${defaultPic}';">`;
+        }
+        // Ensure timestamp is reasonably formatted
+        const displayTimestamp = typeof message.timestamp === 'string' ? message.timestamp : (message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '');
+
+        messageEl.innerHTML = `
+            ${showPic ? profilePicHtml : '<div style="width: 36px; flex-shrink: 0;"></div>'}
+            <div class="bubble">
+                ${senderNameHtml}
+                <p>${escapeHtml(message.content)}</p>
+                <div class="message-meta">
+                    <span class="timestamp">${displayTimestamp}</span>
+                    ${ticksHtml}
+                </div>
+            </div>
+        `;
         messageList.appendChild(messageEl);
+
+        // Update ticks immediately if status is known and message is sent
+         if (isSent && message.status) {
+             const ticksContainer = messageEl.querySelector('.status-ticks');
+             if (ticksContainer) {
+                 updateTickIcon(ticksContainer, message.status);
+             }
+         }
     }
 
-    /** Handles sending a message */
+    /** NEW HELPER: Updates the tick icon based on status */
+    function updateTickIcon(ticksContainer, status) {
+         let iconClass = 'fa-check'; // Default: sent
+         let readClass = '';
+
+         if (status === 'delivered') {
+             iconClass = 'fa-check-double';
+         } else if (status === 'read') {
+             iconClass = 'fa-check-double';
+             readClass = 'read'; // Add class for blue color
+         } else if (status === 'sending') { // Optional: Show clock for sending
+             iconClass = 'fa-clock';
+         }
+         // Add 'fas' for FontAwesome solid style
+         ticksContainer.innerHTML = `<i class="fas ${iconClass} ${readClass}"></i>`;
+    }
+
+    /** MODIFIED: Handles sending a message */
     function sendMessage() {
-        if (!messageInput) return; const messageText = messageInput.value.trim();
-        let canSend = true; let failReason = [];
-        if (messageText === '') { canSend = false; failReason.push("Message empty"); } if (!currentChatId) { canSend = false; failReason.push("No active chat"); } if (!isSocketAuthenticated) { canSend = false; failReason.push("Not authed"); } if (!currentUser.id) { canSend = false; failReason.push("User ID missing"); } if (!socket || !socket.connected) { canSend = false; failReason.push("Socket disconnected"); }
-        if (!canSend) { console.warn("Cannot send message:", failReason.join(', ')); return; }
-        const tempId = 'temp_' + Date.now(); const newMessage = { id: tempId, sender: currentUser.id, recipientUid: currentChatId, content: messageText, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }), status: 'sending' };
-        if (!currentMessages[currentChatId]) currentMessages[currentChatId] = []; currentMessages[currentChatId].push(newMessage);
-        displayMessage(newMessage); scrollToBottom(); messageInput.value = ''; messageInput.focus();
-        console.log(`Emitting 'sendMessage': Recipient=${currentChatId}, Content=${messageText.substring(0,30)}...`);
+        if (!messageInput) return; const messageText = messageInput.value.trim(); let canSend = true; let failReason = []; if (messageText === '') { canSend = false; failReason.push("Message empty"); } if (!currentChatId) { canSend = false; failReason.push("No active chat"); } if (!isSocketAuthenticated) { canSend = false; failReason.push("Not authed"); } if (!currentUser.id) { canSend = false; failReason.push("User ID missing"); } if (!socket || !socket.connected) { canSend = false; failReason.push("Socket disconnected"); } if (!canSend) { console.warn("Cannot send message:", failReason.join(', ')); return; }
+
+        const tempId = 'temp_' + Date.now(); // Use temporary ID for immediate display
+        const newMessage = {
+            id: tempId, // Display with temp ID
+            sender: currentUser.id,
+            // recipientUid: currentChatId, // Backend knows recipient from event
+            content: messageText,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+            status: 'sending' // Initial status
+        };
+
+        if (!currentMessages[currentChatId]) currentMessages[currentChatId] = [];
+        currentMessages[currentChatId].push(newMessage);
+        displayMessage(newMessage); // Display immediately with 'sending' status (clock icon)
+        scrollToBottom(); messageInput.value = ''; messageInput.focus();
+        console.log(`Emitting 'sendMessage': Recipient=${currentChatId}, Content=${messageText.substring(0,30)}... TempID=${tempId}`);
+
+        // Emit to server, include tempId
         socket.emit('sendMessage', { recipientUid: currentChatId, content: messageText, tempId: tempId });
-        updateContactPreview(currentChatId, `You: ${messageText}`, newMessage.timestamp, currentUser.id); hideTypingIndicator();
+
+        // Update preview optimistically
+        updateContactPreview(currentChatId, `You: ${messageText}`, newMessage.timestamp, currentUser.id);
+        // Stop local typing indicator if any
+        handleTyping(false); // Explicitly stop typing
     }
 
     /** Updates the sidebar preview for a chat contact */
@@ -415,6 +612,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function showSidebarMobile() { if(sidebarElement) sidebarElement.classList.remove('mobile-hidden'); if(chatAreaElement) chatAreaElement.classList.add('mobile-hidden'); removeMobileBackButton(); }
     function addMobileBackButton() { const h=document.querySelector('.chat-header'); if(!h || document.getElementById('mobile-back-button')) return; const b=document.createElement('button'); b.innerHTML='<i class="fas fa-arrow-left"></i>'; b.id='mobile-back-button'; b.title="Back"; b.style.cssText=`margin-right:10px;border:none;background:none;color:var(--text-secondary);font-size:1.2em;cursor:pointer;padding:8px;flex-shrink:0;order:-1;`; b.onclick=showSidebarMobile; h.prepend(b); }
     function removeMobileBackButton() { const b=document.getElementById('mobile-back-button'); if(b) b.remove(); }
+
+    function handleTyping(isTyping = true) {
+        if (!currentChatId || !isSocketAuthenticated || !socket) return;
+        socket.emit('typing', { recipientUid: currentChatId, isTyping });
+        clearTimeout(typingTimer); // Clear existing timer
+        if (isTyping) { // Only set a new timer if currently typing
+            typingTimer = setTimeout(() => {
+                if(socket) socket.emit('typing', { recipientUid: currentChatId, isTyping: false });
+            }, typingTimeout);
+        }
+    }
 
     // --- Event Listeners ---
     if (sendButton) sendButton.addEventListener('click', sendMessage);

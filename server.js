@@ -320,6 +320,94 @@ io.on('connection', (socket) => {
         socket.to(recipientUid).emit('typingStatus', { senderUid: socket.user.uid, isTyping: data.isTyping === true });
     }); // End 'typing'
 
+    //new tick status
+
+    // --- Handle Message Status Updates (Delivered/Read) ---
+    socket.on('messageStatusUpdate', async (data) => {
+        if (!socket.user) return socket.emit('error', { message: 'Auth required for status update.' });
+        if (!data || !data.status) return console.log('[STATUS UPDATE] Invalid data received:', data);
+
+        const recipientUid = socket.user.uid; // The user confirming status is the recipient
+        const newStatus = data.status; // 'delivered' or 'read'
+
+        console.log(`[STATUS UPDATE] Received from ${recipientUid}: Status=${newStatus}, Data=${JSON.stringify(data)}`);
+
+        let client = null; // For potential transaction
+        try {
+            client = await db.pool.connect();
+            await client.query('BEGIN');
+
+            if (newStatus === 'delivered' && data.messageId) {
+                // --- Handle 'delivered' status for a single message ---
+                const messageId = BigInt(data.messageId); // Ensure messageId is BigInt if using BIGSERIAL
+                const query = `
+                    UPDATE messages SET status = 'delivered'
+                    WHERE message_id = $1 AND recipient_uid = $2 AND status = 'sent'
+                    RETURNING sender_uid;
+                `;
+                const { rows, rowCount } = await client.query(query, [messageId, recipientUid]);
+
+                if (rowCount > 0) {
+                    const senderUid = rows[0].sender_uid;
+                    console.log(`[STATUS UPDATE] Message ${messageId} marked as delivered for recipient ${recipientUid}. Notifying sender ${senderUid}.`);
+                    // Notify the original sender
+                    io.to(senderUid).emit('updateMessageStatus', { messageId: messageId.toString(), status: 'delivered' }); // Send messageId as string
+                } else {
+                    console.log(`[STATUS UPDATE] Message ${messageId} not updated to delivered (already delivered/read, or not recipient?).`);
+                }
+
+            } else if (newStatus === 'read' && Array.isArray(data.messageIds) && data.messageIds.length > 0) {
+                // --- Handle 'read' status for multiple messages ---
+                // Ensure IDs are BigInts if needed
+                const messageIds = data.messageIds.map(id => BigInt(id));
+                const query = `
+                    UPDATE messages SET status = 'read'
+                    WHERE message_id = ANY($1::bigint[]) AND recipient_uid = $2 AND status != 'read'
+                    RETURNING message_id, sender_uid;
+                `;
+                const { rows, rowCount } = await client.query(query, [messageIds, recipientUid]);
+
+                if (rowCount > 0) {
+                    console.log(`[STATUS UPDATE] ${rowCount} messages marked as read for recipient ${recipientUid}. Notifying senders.`);
+                    // Notify each sender for their respective messages that were updated
+                    const notifications = new Map(); // Map<senderUid, Array<messageId>>
+                    rows.forEach(row => {
+                        const senderUid = row.sender_uid;
+                        const msgIdStr = row.message_id.toString(); // Send messageId as string
+                        if (!notifications.has(senderUid)) {
+                            notifications.set(senderUid, []);
+                        }
+                        notifications.get(senderUid).push(msgIdStr);
+                    });
+
+                    notifications.forEach((msgIds, senderUid) => {
+                        console.log(`[STATUS UPDATE] Notifying sender ${senderUid} about ${msgIds.length} read messages.`);
+                        // Send individual updates or potentially batch them
+                        msgIds.forEach(msgId => {
+                             io.to(senderUid).emit('updateMessageStatus', { messageId: msgId, status: 'read' });
+                        });
+                    });
+                } else {
+                     console.log(`[STATUS UPDATE] No messages updated to read for recipient ${recipientUid} (already read, or not recipient?).`);
+                }
+
+            } else {
+                console.log('[STATUS UPDATE] Invalid status or missing messageId(s). Data:', data);
+            }
+
+            await client.query('COMMIT'); // Commit transaction
+
+        } catch (error) {
+            if (client) await client.query('ROLLBACK');
+            console.error(`!!! [STATUS UPDATE] Error processing status update for ${recipientUid} !!!`, error);
+            // Don't necessarily emit error back to client for background updates like read/delivered
+            // unless it's critical feedback.
+            // socket.emit('error', { message: 'Failed to update message status.' });
+        } finally {
+            if (client) client.release();
+        }
+    }); // End 'messageStatusUpdate'
+
     // --- Disconnection ---
     socket.on('disconnect', async (reason) => {
         console.log(`Socket disconnected: ${socket.id}, Reason: ${reason}`);
