@@ -196,8 +196,8 @@ input:focus {
 .message.sent { align-self: flex-end; }
 .message.received { align-self: flex-start; }
 .message .bubble { padding: 6px 12px; border-radius: 8px; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08); position: relative; word-wrap: break-word; }
-.message.sent .bubble { background-color: var(--sent-bubble-bg); }
-.message.received .bubble { background-color: var(--received-bubble-bg); }
+.message.sent .bubble { background-color: var(--sent-bubble-bg); min-width: 70px; }
+.message.received .bubble { background-color: var(--received-bubble-bg); min-width: 50px; }
 .message.received + .message.received[data-sender-id]:not([data-sender-id=""]) { margin-top: 2px; }
 .message.received + .message.received[data-sender-id]:not([data-sender-id=""]) .profile-pic-small { visibility: hidden; }
 .message.sent + .message.sent { margin-top: 2px; }
