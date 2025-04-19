@@ -189,7 +189,7 @@ io.on('connection', (socket) => {
 
             // 2. Save message to Database
             // Ensure 'messages' table exists!
-            const insertMsgQuery = `INSERT INTO messages (sender_uid, recipient_uid, content) VALUES ($1, $2, $3) RETURNING message_id, "timestamp", status`;
+            const insertMsgQuery = `INSERT INTO messages (sender_uid, recipient_uid, content) VALUES ($1, $2, $3) RETURNING message_id, "timestamp", status, sender_uid, recipient_uid, content`; // Return more fields for debugging
             const { rows } = await client.query(insertMsgQuery, [senderUid, recipientUid, content]);
             const savedMessage = rows[0]; if (!savedMessage) throw new Error("Msg save failed.");
             console.log(`[MSG SEND] Message saved ID: ${savedMessage.message_id}`);
@@ -197,18 +197,33 @@ io.on('connection', (socket) => {
             await client.query('COMMIT'); // Commit transaction
 
             // 3. Emit message to recipient (include sender info)
+            // const messageForRecipient = {
+            //      id: savedMessage.message_id, sender: senderUid,
+            //      senderName: socket.user.username || senderUid, // Current sender info from authenticated socket
+            //      senderPic: socket.user.profilePicUrl, // Current sender info
+            //      content: content,
+            //      timestamp: savedMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+            // };
             const messageForRecipient = {
-                 id: savedMessage.message_id, sender: senderUid,
-                 senderName: socket.user.username || senderUid, // Current sender info from authenticated socket
-                 senderPic: socket.user.profilePicUrl, // Current sender info
-                 content: content,
-                 timestamp: savedMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+                 id: savedMessage.message_id, // Use BigInt converted by driver, or ensure string if needed
+                 sender: savedMessage.sender_uid,
+                 senderName: socket.user.username || senderUid,
+                 senderPic: socket.user.profilePicUrl,
+                 content: savedMessage.content, // Use content saved in DB
+                 timestamp: savedMessage.timestamp // *** SEND RAW TIMESTAMP OBJECT/STRING ***
             };
+            
             io.to(recipientUid).emit('receiveMessage', messageForRecipient);
             console.log(`[MSG SEND] Emitted 'receiveMessage' to room ${recipientUid}`);
 
             // 4. Send confirmation back to sender
-             socket.emit('messageSentConfirmation', { tempId: tempId || null, dbId: savedMessage.message_id, timestamp: savedMessage.timestamp, status: savedMessage.status });
+             // socket.emit('messageSentConfirmation', { tempId: tempId || null, dbId: savedMessage.message_id, timestamp: savedMessage.timestamp, status: savedMessage.status });
+            socket.emit('messageSentConfirmation', {
+                  tempId: tempId || null,
+                  dbId: savedMessage.message_id.toString(), // Send ID as string
+                  timestamp: savedMessage.timestamp, // *** SEND RAW TIMESTAMP OBJECT/STRING ***
+                  status: savedMessage.status // Send initial status ('sent')
+             });
 
         } catch (error) {
             if (client) { console.error('[MSG SEND] Rolling back transaction due to error.'); await client.query('ROLLBACK'); }
@@ -228,9 +243,21 @@ io.on('connection', (socket) => {
         const limit = 50; const offset = 0;
         console.log(`[HISTORY] User ${currentUserUid} requesting history with ${otherUserUid}`);
         try {
-            const query = `SELECT message_id as id, sender_uid as sender, content, timestamp FROM messages WHERE (sender_uid = $1 AND recipient_uid = $2) OR (sender_uid = $2 AND recipient_uid = $1) ORDER BY timestamp DESC LIMIT $3 OFFSET $4;`;
+            const query = `SELECT message_id as id, sender_uid as sender, content, timestamp, status
+                FROM messages
+                WHERE (sender_uid = $1 AND recipient_uid = $2) OR (sender_uid = $2 AND recipient_uid = $1)
+                ORDER BY timestamp ASC -- Fetch oldest first for easy display order
+                LIMIT $3 OFFSET $4;`;
             const { rows } = await db.query(query, [currentUserUid, otherUserUid, limit, offset]);
-            const history = rows.map(msg => ({ ...msg, timestamp: msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) })).reverse();
+            // const history = rows.map(msg => ({ ...msg, timestamp: msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) })).reverse();
+            // *** Send raw timestamps back ***
+            const history = rows.map(msg => ({
+                 id: msg.id.toString(), // Send ID as string
+                 sender: msg.sender,
+                 content: msg.content,
+                 timestamp: msg.timestamp, // Send raw timestamp object/string
+                 status: msg.status // Send status fetched from DB
+             }));
             console.log(`[HISTORY] Sending ${history.length} messages for chat ${currentUserUid}<->${otherUserUid}`);
             socket.emit('chatHistory', { chatId: otherUserUid, messages: history });
         } catch (dbError) { console.error(`[HISTORY] DB error for ${currentUserUid}<->${otherUserUid}:`, dbError); socket.emit('error', { message: 'Failed to load history.' }); }

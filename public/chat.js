@@ -253,35 +253,65 @@ document.addEventListener('DOMContentLoaded', () => {
         // Other Handlers
         socket.on('messageSentConfirmation', (data) => {
              console.log(`[Sent Confirmation] Received for tempId: ${data.tempId}, dbId: ${data.dbId}, status: ${data.status}`);
-             if (!data || !data.tempId || !data.dbId || !data.status) return;
+             if (!data || !data.tempId || !data.dbId || !data.status || !data.timestamp) return;
+
+             const dbIdStr = data.dbId.toString();
+             const serverTimestamp = new Date(data.timestamp); // Parse server timestamp
+             const displayTimestamp = serverTimestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }); // Format locally
 
              // Find the message element displayed with the temp ID
              const messageEl = messageList?.querySelector(`.message.sent[data-message-id="${data.tempId}"]`);
              if (messageEl) {
-                 // Update its dataset ID to the real DB ID
-                 messageEl.dataset.messageId = data.dbId.toString();
-                 // Update the tick status
+                 messageEl.dataset.messageId = dbIdStr; // Update dataset ID
                  const ticksContainer = messageEl.querySelector('.status-ticks');
-                 if (ticksContainer) {
-                     updateTickIcon(ticksContainer, data.status); // Should be 'sent'
-                 }
+                 if (ticksContainer) updateTickIcon(ticksContainer, data.status); // Update tick to 'sent'
+                 // Update timestamp in UI
+                 const timestampEl = messageEl.querySelector('.timestamp');
+                 if (timestampEl) timestampEl.textContent = displayTimestamp;
              }
 
-             // Update the message ID and status in the state cache
+             // Update the message ID, status, AND timestamp in the state cache
               let messageUpdatedInState = false;
               for (const chatId in currentMessages) {
                  const messageIndex = currentMessages[chatId].findIndex(msg => msg.id === data.tempId);
                  if (messageIndex !== -1) {
-                     currentMessages[chatId][messageIndex].id = data.dbId.toString(); // Update ID
-                     currentMessages[chatId][messageIndex].status = data.status;     // Update status
+                     currentMessages[chatId][messageIndex].id = dbIdStr; // Update ID
+                     currentMessages[chatId][messageIndex].status = data.status;
+                     currentMessages[chatId][messageIndex].timestamp = serverTimestamp; // Store raw Date object
                      messageUpdatedInState = true;
                      break;
                  }
               }
-              if (!messageUpdatedInState) {
-                 console.warn(`[Sent Confirmation] Could not find message with tempId ${data.tempId} in state cache.`);
-              }
+              if (!messageUpdatedInState) console.warn(`[Sent Conf] Could not find tempId ${data.tempId} in state.`);
          });
+
+          /** MODIFIED: Handle status updates (updates timestamp too if applicable?) */
+          socket.on('updateMessageStatus', (data) => { // data = { messageId, status }
+                console.log(`[Status Update Received] messageId: ${data.messageId}, status: ${data.status}`);
+                if (!data || !data.messageId || !data.status) return;
+                const messageIdStr = data.messageId.toString();
+
+                const messageEl = messageList?.querySelector(`.message.sent[data-message-id="${messageIdStr}"]`);
+                if (messageEl) {
+                     const ticksContainer = messageEl.querySelector('.status-ticks');
+                     if(ticksContainer){ updateTickIcon(ticksContainer, data.status); }
+                }
+                // Update the status in the local state cache
+                 let messageUpdatedInState = false;
+                 for (const chatId in currentMessages) {
+                     const messageIndex = currentMessages[chatId].findIndex(msg => msg.id === messageIdStr);
+                     if (messageIndex !== -1) {
+                         const statusOrder = { 'sent': 0, 'delivered': 1, 'read': 2, 'sending': -1 };
+                         // Only update if new status is higher rank
+                         if (statusOrder[data.status] > statusOrder[currentMessages[chatId][messageIndex].status]) {
+                               currentMessages[chatId][messageIndex].status = data.status;
+                         }
+                         messageUpdatedInState = true;
+                         break;
+                     }
+                 }
+                if (!messageUpdatedInState) console.warn(`[Status Update] Could not find message ${messageIdStr} in state cache.`);
+            });
         console.log("chat.js: Listener attached for 'messageSentConfirmation'");
         socket.on('disconnect', (reason) => { console.log("chat.js: Event listener fired: disconnect"); isSocketAuthenticated = false; /* ... */ });
         console.log("chat.js: Listener attached for 'disconnect'");
@@ -517,7 +547,25 @@ document.addEventListener('DOMContentLoaded', () => {
             profilePicHtml = `<img src="${picUrl}" alt="" class="profile-pic-small" onerror="this.onerror=null; this.src='${defaultPic}';">`;
         }
         // Ensure timestamp is reasonably formatted
-        const displayTimestamp = typeof message.timestamp === 'string' ? message.timestamp : (message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : '');
+        // *** Format Timestamp using Client's Locale ***
+        let displayTimestamp = '';
+        try {
+            // Try creating a Date object. Backend sends timestamptz which JS often parses correctly.
+            // If it's already formatted (like from optimistic update), use as is.
+            if (typeof message.timestamp === 'string' && message.timestamp.includes(':')) { // Basic check if already formatted H:MM AM/PM
+                 displayTimestamp = message.timestamp;
+            } else if (message.timestamp) {
+                 displayTimestamp = new Date(message.timestamp).toLocaleTimeString([], {
+                     hour: 'numeric', // Use 'numeric' or '2-digit'
+                     minute: '2-digit',
+                     hour12: true // Use true or false based on preference
+                 });
+            }
+        } catch (e) {
+             console.error("Error formatting timestamp:", message.timestamp, e);
+             displayTimestamp = '--:--'; // Fallback
+        }
+        // *** End Timestamp Formatting ***
 
         messageEl.innerHTML = `
             ${showPic ? profilePicHtml : '<div style="width: 36px; flex-shrink: 0;"></div>'}
@@ -543,18 +591,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /** NEW HELPER: Updates the tick icon based on status */
     function updateTickIcon(ticksContainer, status) {
-         let iconClass = 'fa-check'; // Default: sent
+         let iconClass = 'fa-clock'; // Default: sending
          let readClass = '';
-
-         if (status === 'delivered') {
-             iconClass = 'fa-check-double';
-         } else if (status === 'read') {
-             iconClass = 'fa-check-double';
-             readClass = 'read'; // Add class for blue color
-         } else if (status === 'sending') { // Optional: Show clock for sending
-             iconClass = 'fa-clock';
-         }
-         // Add 'fas' for FontAwesome solid style
+         if (status === 'sent') { iconClass = 'fa-check'; }
+         else if (status === 'delivered') { iconClass = 'fa-check-double'; }
+         else if (status === 'read') { iconClass = 'fa-check-double'; readClass = 'read'; }
          ticksContainer.innerHTML = `<i class="fas ${iconClass} ${readClass}"></i>`;
     }
 
