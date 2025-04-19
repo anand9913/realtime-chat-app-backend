@@ -257,19 +257,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
              const dbIdStr = data.dbId.toString();
              const serverTimestamp = new Date(data.timestamp); // Parse server timestamp
-             const displayTimestamp = serverTimestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }); // Format locally
+             const displayTimestamp = serverTimestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }); // Format locally
 
              // Find the message element displayed with the temp ID
              const messageEl = messageList?.querySelector(`.message.sent[data-message-id="${data.tempId}"]`);
-             if (messageEl) {
-                 messageEl.dataset.messageId = dbIdStr; // Update dataset ID
-                 const ticksContainer = messageEl.querySelector('.status-ticks');
-                 if (ticksContainer) updateTickIcon(ticksContainer, data.status); // Update tick to 'sent'
-                 // Update timestamp in UI
-                 const timestampEl = messageEl.querySelector('.timestamp');
-                 if (timestampEl) timestampEl.textContent = displayTimestamp;
-             }
+              if (messageEl) {
+                  messageEl.dataset.messageId = dbIdStr; // Update ID
+                  const ticksContainer = messageEl.querySelector('.status-ticks');
+                  if (ticksContainer) updateTickIcon(ticksContainer, data.status); // Update tick to 'sent'
+                  const timestampEl = messageEl.querySelector('.timestamp');
+                  if (timestampEl) timestampEl.textContent = displayTimestamp; // Update timestamp in UI
+              }
 
+            // Update state cache
+             let updated = false;
+             for (const chatId in currentMessages) { 
              // Update the message ID, status, AND timestamp in the state cache
               let messageUpdatedInState = false;
               for (const chatId in currentMessages) {
@@ -282,7 +284,8 @@ document.addEventListener('DOMContentLoaded', () => {
                      break;
                  }
               }
-              if (!messageUpdatedInState) console.warn(`[Sent Conf] Could not find tempId ${data.tempId} in state.`);
+              if (!messageUpdatedInState) console.warn(`[Sent Conf] Could not find tempId ${data.tempId} in state.`);}
+            if (!updated) console.warn(`[Sent Conf] Could not find tempId ${data.tempId} in state.`);
          });
 
           /** MODIFIED: Handle status updates (updates timestamp too if applicable?) */
@@ -548,24 +551,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         // Ensure timestamp is reasonably formatted
         // *** Format Timestamp using Client's Locale ***
-        let displayTimestamp = '';
+        let displayTimestamp = '--:--'; // Default fallback
+        const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true }; // Consistent options
         try {
-            // Try creating a Date object. Backend sends timestamptz which JS often parses correctly.
-            // If it's already formatted (like from optimistic update), use as is.
-            if (typeof message.timestamp === 'string' && message.timestamp.includes(':')) { // Basic check if already formatted H:MM AM/PM
-                 displayTimestamp = message.timestamp;
-            } else if (message.timestamp) {
-                 displayTimestamp = new Date(message.timestamp).toLocaleTimeString([], {
-                     hour: 'numeric', // Use 'numeric' or '2-digit'
-                     minute: '2-digit',
-                     hour12: true // Use true or false based on preference
-                 });
+            const rawTimestamp = message.timestamp;
+            console.log(`[Timestamp] Processing raw timestamp for msg ${message.id}:`, rawTimestamp, `(Type: ${typeof rawTimestamp})`);
+
+            if (rawTimestamp) {
+                 // Attempt to parse only if it's likely from DB (Date object or ISO string)
+                 // The optimistic timestamp is already a formatted string "H:MM AM/PM"
+                 const looksLikeIso = typeof rawTimestamp === 'string' && rawTimestamp.includes('T') && rawTimestamp.includes('Z');
+                 const isDateObject = rawTimestamp instanceof Date;
+
+                 if (isDateObject || looksLikeIso) {
+                     const dateObject = new Date(rawTimestamp); // Parse string or use Date object
+                     if (!isNaN(dateObject.getTime())) { // Check if parsing was successful
+                         displayTimestamp = dateObject.toLocaleTimeString([], timeOptions); // Format using client's locale
+                         console.log(`[Timestamp] Formatted from Date/ISO: ${displayTimestamp}`);
+                     } else {
+                          console.warn("[Timestamp] Invalid Date object after parsing:", rawTimestamp);
+                     }
+                 } else if (typeof rawTimestamp === 'string') {
+                      // Assume it's the pre-formatted optimistic timestamp string
+                      displayTimestamp = rawTimestamp;
+                      console.log("[Timestamp] Using pre-formatted optimistic string:", displayTimestamp);
+                 } else {
+                      console.warn("[Timestamp] Unexpected timestamp type:", rawTimestamp);
+                 }
+            } else {
+                 console.warn("[Timestamp] Timestamp field missing or null:", rawTimestamp);
             }
         } catch (e) {
-             console.error("Error formatting timestamp:", message.timestamp, e);
-             displayTimestamp = '--:--'; // Fallback
+             console.error("[Timestamp] Error formatting timestamp:", message.timestamp, e);
         }
-        // *** End Timestamp Formatting ***
+        // --- End Timestamp Formatting ---
 
         messageEl.innerHTML = `
             ${showPic ? profilePicHtml : '<div style="width: 36px; flex-shrink: 0;"></div>'}
@@ -609,23 +628,22 @@ document.addEventListener('DOMContentLoaded', () => {
             sender: currentUser.id,
             // recipientUid: currentChatId, // Backend knows recipient from event
             content: messageText,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+            timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }),
             status: 'sending' // Initial status
         };
 
-        if (!currentMessages[currentChatId]) currentMessages[currentChatId] = [];
-        currentMessages[currentChatId].push(newMessage);
-        displayMessage(newMessage); // Display immediately with 'sending' status (clock icon)
-        scrollToBottom(); messageInput.value = ''; messageInput.focus();
+        if (!currentMessages[currentChatId]) currentMessages[currentChatId] = []; currentMessages[currentChatId].push({...newMessage, timestamp: new Date()}); // Store raw date in cache
+        displayMessage(newMessage); scrollToBottom(); messageInput.value = ''; messageInput.focus();
         console.log(`Emitting 'sendMessage': Recipient=${currentChatId}, Content=${messageText.substring(0,30)}... TempID=${tempId}`);
 
         // Emit to server, include tempId
-        socket.emit('sendMessage', { recipientUid: currentChatId, content: messageText, tempId: tempId });
+        if (socket && socket.connected) { socket.emit('sendMessage', { recipientUid: currentChatId, content: messageText, tempId: tempId }); } else { console.error("Cannot send message, socket disconnected."); }
 
         // Update preview optimistically
         updateContactPreview(currentChatId, `You: ${messageText}`, newMessage.timestamp, currentUser.id);
         // Stop local typing indicator if any
         handleTyping(false); // Explicitly stop typing
+        hideTypingIndicator(); // review 
     }
 
     /** Updates the sidebar preview for a chat contact */
