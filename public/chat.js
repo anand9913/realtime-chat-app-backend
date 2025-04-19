@@ -453,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("[Initialize] initializeChatApp started...");
         displayContactsOrSearchResults([], false); // Display empty initially
         setupMobileView();
-        setTimeout(initializeEmojiPicker, 100); // Delay initialization slightly (e.g., 100ms)
+        setTimeout(initializeEmojiPicker, 1000); // Delay initialization slightly (e.g., 100ms)
 
         console.log("[Initialize] initializeChatApp finished basic setup (Emoji Picker delayed).");
     }
