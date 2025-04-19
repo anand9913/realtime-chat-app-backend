@@ -64,24 +64,7 @@
 
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@joeattardi/emoji-button@latest/dist/index.min.js"></script>
-    <script>
-        console.log("--- Test Script Running ---");
-        // Check immediately after library script tag
-        if (typeof EmojiButton !== 'undefined') {
-            console.log("Test Script: SUCCESS! EmojiButton object FOUND immediately.");
-            // You could even try creating a dummy instance here to test execution
-            try {
-                new EmojiButton(); // Test basic instantiation
-                console.log("Test Script: Dummy EmojiButton instance created successfully.");
-            } catch (e) {
-                console.error("Test Script: EmojiButton FOUND but failed to instantiate:", e);
-            }
-        } else {
-            console.error("Test Script: FAILURE! EmojiButton object UNDEFINED immediately.");
-        }
-        console.log("--- Test Script Finished ---");
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@joeattardi/emoji-button@latest/dist/emoji-button.umd.min.js"></script>
     <script src="chat.js"></script>
 </body>
 </html>
