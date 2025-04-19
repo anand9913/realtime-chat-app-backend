@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const contactList = document.getElementById('contact-list');
     const messageList = document.getElementById('message-list');
     const messageInput = document.getElementById('message-input');
+    const emojiButton = document.getElementById('emoji-button'); // Get the emoji button
     const sendButton = document.getElementById('send-button');
     const chatHeaderProfile = document.getElementById('chat-header-profile');
     const typingIndicator = document.getElementById('typing-indicator');
@@ -37,6 +38,87 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- State ---
     let currentChatId = null; // UID of the person being chatted with
     let currentUser = { id: null, name: defaultUsername, profilePic: defaultPic };
+
+    //new 15:13 date 19
+
+    let emojiPicker = null; // Variable to hold the picker instance
+
+    function initializeEmojiPicker() {
+        if (!emojiButton || !messageInput) {
+            console.error("Cannot initialize emoji picker: Button or Input not found.");
+            return;
+        }
+
+        // Check if the EmojiButton library loaded
+        if (typeof EmojiButton === 'undefined') {
+             console.error("EmojiButton library not loaded. Check the script tag in chat.html.");
+             // Disable the button visually if library failed
+             emojiButton.disabled = true;
+             emojiButton.style.opacity = '0.5';
+             emojiButton.title = "Emoji picker failed to load";
+             return;
+        }
+
+        console.log("Initializing Emoji Picker...");
+        try {
+            emojiPicker = new EmojiButton({
+                position: 'top-start', // Position relative to the trigger button
+                autoHide: true,       // Hide picker when clicking outside
+                theme: 'auto',        // Use light/dark based on system
+                // categoryOrder: [...], // Optional: Customize category order
+                // categories: [...],    // Optional: Customize available categories
+                 emojiSize: '1.5em',
+                 emojisPerRow: 8,
+                 rows: 6,
+            });
+
+            // --- Event Listener for Emoji Selection ---
+            emojiPicker.on('emoji', selection => {
+                console.log(`Emoji selected: ${selection.emoji}`);
+                insertTextAtCursor(messageInput, selection.emoji); // Insert emoji
+                messageInput.focus(); // Keep focus on input
+            });
+
+            // --- Event Listener to Toggle Picker ---
+            emojiButton.addEventListener('click', () => {
+                console.log("Emoji button clicked, toggling picker...");
+                if (emojiPicker) {
+                    emojiPicker.togglePicker(emojiButton); // Show/hide the picker
+                } else {
+                    console.error("Emoji picker not initialized!");
+                }
+            });
+            console.log("Emoji Picker initialized and listener attached.");
+
+        } catch (error) {
+             console.error("Error initializing Emoji Picker:", error);
+             emojiButton.disabled = true;
+             emojiButton.style.opacity = '0.5';
+             emojiButton.title = "Emoji picker failed to load";
+        }
+    }
+
+    // --- Helper Function to Insert Text at Cursor ---
+    function insertTextAtCursor(inputElement, textToInsert) {
+        if (!inputElement) return;
+
+        const startPos = inputElement.selectionStart;
+        const endPos = inputElement.selectionEnd;
+        const currentVal = inputElement.value;
+
+        // Insert the text at the cursor position(s)
+        inputElement.value = currentVal.substring(0, startPos) + textToInsert + currentVal.substring(endPos, currentVal.length);
+
+        // Move the cursor position to after the inserted text
+        const newCursorPos = startPos + textToInsert.length;
+        inputElement.selectionStart = newCursorPos;
+        inputElement.selectionEnd = newCursorPos;
+
+        // Trigger input event manually if needed by other listeners (optional)
+        // inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    
+    //end
     // Contact object: { id, username, profilePicUrl, status?, lastSeen?, lastMessage?, timestamp?, lastMessageSenderUid?, lastMessageTimestamp?, unread? }
     let currentContacts = [];
     let currentMessages = {}; // { chatId: [messages] }
@@ -371,6 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("[Initialize] initializeChatApp started...");
         displayContactsOrSearchResults([], false); // Display empty initially
         setupMobileView();
+        initializeEmojiPicker(); // *** Initialize the picker here ***
     }
 
     /**
