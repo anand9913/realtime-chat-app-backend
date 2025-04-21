@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Hide the picker after selection
-        picker.classList.remove('visible');
+        // picker.classList.remove('visible');
 
         // Keep focus on the input field
         if (messageInput) messageInput.focus();
