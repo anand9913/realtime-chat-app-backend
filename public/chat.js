@@ -728,7 +728,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (socket && socket.connected) { socket.emit('sendMessage', { recipientUid: currentChatId, content: messageText, tempId: tempId }); } else { console.error("Cannot send message, socket disconnected."); }
 
         // Update preview optimistically
-        updateContactPreview(currentChatId, `You: ${messageText}`, newMessage.timestamp, currentUser.id);
+        // updateContactPreview(currentChatId, `You: ${messageText}`, newMessage.timestamp, currentUser.id);
+        updateContactPreview(currentChatId, messageText, newMessage.timestamp, currentUser.id);
         // Stop local typing indicator if any
         handleTyping(false); // Explicitly stop typing
         hideTypingIndicator(); // review 
