@@ -510,9 +510,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else { // Active contact
                 let previewMsg = item.lastMessage || 'No messages yet';
                 // Prepend "You:" if the logged-in user sent the last message
-                if (item.lastMessageSenderUid === currentUser.id) {
-                    previewMsg = `You: ${previewMsg}`;
-                }
+                // if (item.lastMessageSenderUid === currentUser.id) {
+                //     previewMsg = `You: ${previewMsg}`;
+                // }
                 itemPreviewHtml = `<span class="last-message">${escapeHtml(previewMsg)}</span>`;
                 let timestamp = item.timestamp || ''; // Use timestamp from contact data
                 let unread = item.unread || 0; // TODO: Implement unread count state
