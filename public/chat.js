@@ -476,13 +476,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Sort contacts by online status first, then potentially last message time (if available)
         if (!isSearchResult) {
              itemsToDisplay.sort((a, b) => {
+                 // Use the raw timestamp stored for sorting
+                   const timeA = a.lastMessageTimestamp ? new Date(a.lastMessageTimestamp).getTime() : 0;
+                   const timeB = b.lastMessageTimestamp ? new Date(b.lastMessageTimestamp).getTime() : 0;
+                    if (timeA !== timeB) return timeB - timeA; // Latest message first
                   const statusA = a.status === 'online' ? 0 : 1;
                   const statusB = b.status === 'online' ? 0 : 1;
                   if (statusA !== statusB) return statusA - statusB; // Online first
-                  // Optional secondary sort: last message time (needs reliable timestamp)
-                  const timeA = a.lastMessageTimestamp ? new Date(a.lastMessageTimestamp).getTime() : 0;
-                  const timeB = b.lastMessageTimestamp ? new Date(b.lastMessageTimestamp).getTime() : 0;
-                   if (timeA !== timeB) return timeB - timeA; // Latest message first
                   // Fallback sort by name
                   return (a.username || a.name || a.id).localeCompare(b.username || b.name || b.id);
              });
@@ -514,7 +514,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 //     previewMsg = `You: ${previewMsg}`;
                 // }
                 itemPreviewHtml = `<span class="last-message">${escapeHtml(previewMsg)}</span>`;
-                let timestamp = item.timestamp || ''; // Use timestamp from contact data
+                // *** Format the raw timestamp for display ***
+                let displayTimestamp = '';
+                if (item.timestamp) { // Use 'timestamp' which holds the raw value for contacts now
+                     try {
+                         displayTimestamp = new Date(item.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+                     } catch(e) { console.error("Error formatting contact timestamp", item.timestamp, e); }
+                }
+                // *** End Formatting ***
                 let unread = item.unread || 0; // TODO: Implement unread count state
                 metaHtml = `<div class="contact-meta"><span class="timestamp">${timestamp}</span>${unread > 0 ? `<span class="unread-count">${unread}</span>` : ''}</div>`;
                 itemEl.addEventListener('click', () => loadChat(item.id));
@@ -742,8 +749,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Determine prefix based on actual sender if provided
         const previewText = (senderId === currentUser.id) ? `You: ${message}` : message;
         currentContacts[contactIndex].lastMessage = previewText;
-        // currentContacts[contactIndex].timestamp = timestamp;
-        currentContacts[contactIndex].lastMessageTimestamp = new Date(); // Use Date object for reliable sorting
+        // Store the raw Date object for sorting and the formatted string for immediate display consistency
+        const now = new Date();
+        currentContacts[contactIndex].timestamp = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }); // Formatted for potential immediate use
+        currentContacts[contactIndex].lastMessageTimestamp = now; // Raw Date object for reliable sorting
         currentContacts[contactIndex].lastMessageSenderUid = senderId; // Store sender
         if (!currentSearchTerm) { displayContactsOrSearchResults(currentContacts, false); } // Re-render list
     }

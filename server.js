@@ -312,6 +312,11 @@ io.on('connection', (socket) => {
                       lastSeen: isOnline ? null : contact.lastSeen, // Only needed if offline
                       lastMessage: lastMessagePreview,
                       // timestamp: formattedTimestamp,
+                      timestamp: contact.lastMessageTimestamp, // Send the raw Date object/string from DB
+                            // *** Keep track of original sender for display logic consistency ***
+                            lastMessageSenderUid: contact.lastMessageSenderUid,
+                            // *** Send original timestamp for sorting if needed ***
+                            lastMessageTimestampSort: contact.lastMessageTimestamp, // Send raw again for reliable sorting
                       status: isOnline ? 'online' : 'offline'
                       // unread count needs separate logic later
                   };
