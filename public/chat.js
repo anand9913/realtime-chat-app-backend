@@ -742,7 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Determine prefix based on actual sender if provided
         const previewText = (senderId === currentUser.id) ? `You: ${message}` : message;
         currentContacts[contactIndex].lastMessage = previewText;
-        // currentContacts[contactIndex].timestamp = timestamp;
+        currentContacts[contactIndex].timestamp = timestamp;
         currentContacts[contactIndex].lastMessageTimestamp = new Date(); // Use Date object for reliable sorting
         currentContacts[contactIndex].lastMessageSenderUid = senderId; // Store sender
         if (!currentSearchTerm) { displayContactsOrSearchResults(currentContacts, false); } // Re-render list

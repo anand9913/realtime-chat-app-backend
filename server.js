@@ -311,7 +311,7 @@ io.on('connection', (socket) => {
                       profilePicUrl: contact.profilePicUrl,
                       lastSeen: isOnline ? null : contact.lastSeen, // Only needed if offline
                       lastMessage: lastMessagePreview,
-                      // timestamp: formattedTimestamp,
+                      timestamp: formattedTimestamp,
                       status: isOnline ? 'online' : 'offline'
                       // unread count needs separate logic later
                   };
